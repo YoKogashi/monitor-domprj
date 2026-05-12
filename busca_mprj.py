@@ -15,23 +15,21 @@ SENHA_APP = "saty tgmz rzrz yrai"
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(texto_bruto):
-    # Forçamos a versão 'v1' para evitar o erro de 'modelo não encontrado'
-    client = genai.Client(api_key=GEMINI_KEY, http_options={'api_version': 'v1'})
+    # Vamos usar a configuração mais simples possível do cliente
+    client = genai.Client(api_key=GEMINI_KEY)
     
-    modelo_operacional = "gemini-1.5-flash"
+    # Adicionamos o prefixo 'models/' que é o que o erro sugeriu estar faltando
+    modelo_operacional = "models/gemini-1.5-flash"
     
     prompt = f"""
-    Analise o texto abaixo do Diário Oficial. 
-    Localize a seção "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
-    Extraia as vagas listadas seguindo este formato rigoroso, separado por ponto e vírgula (;):
-    Item;Órgão;Critério;Origem da Vaga
-    
-    Retorne APENAS os dados encontrados. Se não houver nada, escreva VAZIO.
+    Analise o texto abaixo e localize a seção "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
+    Extraia as vagas listadas seguindo o formato: Item;Órgão;Critério;Origem da Vaga
+    Se não encontrar nada, escreva VAZIO.
     Texto: {texto_bruto}
     """
     
     try:
-        # Chamada direta para a geração de conteúdo
+        # Chamada com o nome do modelo completo
         response = client.models.generate_content(
             model=modelo_operacional, 
             contents=prompt
@@ -42,13 +40,22 @@ def extrair_dados_com_ia(texto_bruto):
         if "VAZIO" in texto_resposta or ";" not in texto_resposta:
             return []
             
-        # Limpa possíveis linhas vazias e organiza os dados
-        linhas = [l for l in texto_resposta.split('\n') if ';' in l]
+        # Filtra apenas as linhas que contêm o separador ponto e vírgula
+        linhas = [l.strip() for l in texto_resposta.split('\n') if ';' in l]
         return [linha.split(';') for linha in linhas]
 
     except Exception as e:
-        print(f"Erro ao processar com a IA: {e}")
-        return []
+        # Se falhar com o prefixo, tentamos sem o prefixo como última instância
+        try:
+            response = client.models.generate_content(
+                model="gemini-1.5-flash", 
+                contents=prompt
+            )
+            linhas = [l.strip() for l in response.text.split('\n') if ';' in l]
+            return [linha.split(';') for linha in linhas]
+        except:
+            print(f"Erro persistente na IA: {e}")
+            return []
 
 def formatar_excel(dados, arquivo, data_do):
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
