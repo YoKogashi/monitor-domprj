@@ -5,7 +5,7 @@ import os
 import time
 import fitz  # PyMuPDF
 from email.message import EmailMessage
-from datetime import datetime
+from datetime import datetime, timedelta
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- CONFIGURAÇÕES ---
@@ -133,19 +133,16 @@ def formatar_excel(dados, arquivo, data_do):
             ws.row_dimensions[row_idx].height = 25
             
         # --- LARGURA AUTOMÁTICA DAS COLUNAS AJUSTADA AO CONTEÚDO ---
-        # Ignoramos a primeira e segunda linhas (título) para o cálculo da largura
         for col in ws.iter_cols(min_row=3, max_row=len(dados)+3, min_col=1, max_col=4):
             max_length = 0
             col_letter = col[0].column_letter # A, B, C ou D
             
             for cell in col:
                 if cell.value:
-                    # Calcula o comprimento verificando possíveis quebras de linha
                     tamanho_texto = max([len(linha) for linha in str(cell.value).split('\n')])
                     if tamanho_texto > max_length:
                         max_length = tamanho_texto
             
-            # Aplica a largura encontrada + 3 pontos de margem de respiro
             ws.column_dimensions[col_letter].width = max_length + 3
 
 def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, arquivo_excel=None, arquivo_pdf=None):
@@ -166,9 +163,9 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
     corpo = (
         f"Pesquisa realizada para o Diario Oficial de {data_do}.\n"
         f"{resultado_texto}\n\n"
-        f"-----------------------------------------------------------\n"
+        f"-------------------------------------------------\n"
         f"Relatorio de Execucao - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-        f"-----------------------------------------------------------\n\n"
+        f"-------------------------------------------------\n\n"
         f"Arquivo DOe: {status_arquivo}\n"
         f"Endereco URL: {endereco_url}\n"
         f"Status do Download: {status_dl} (Tamanho: {tamanho_kb} KB)\n"
@@ -193,8 +190,11 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
         print(f"Erro no envio do e-mail: {e}")
 
 def rodar():
-    data_alvo = "08.05.2026"
-    data_exibicao = "08/05/2026"
+    # --- DATA DINÂMICA: SEMPRE O DIA ANTERIOR ---
+    ontem = datetime.now() - timedelta(days=1)
+    data_alvo = ontem.strftime("%d.%m.%Y")       # Formato para URL: DD.MM.YYYY
+    data_exibicao = ontem.strftime("%d/%m/%Y")   # Formato para o E-mail: DD/MM/YYYY
+    
     url_pdf = f"https://www.mprj.mp.br/documents/20184/8887328/{data_alvo}.pdf"
     
     localizado = False
@@ -204,7 +204,7 @@ def rodar():
     tamanho_pdf_kb = 0
     
     try:
-        print(f"Buscando PDF: {url_pdf}")
+        print(f"Buscando PDF para a data {data_exibicao}: {url_pdf}")
         response = requests.get(url_pdf, timeout=30)
         
         if response.status_code == 200:
