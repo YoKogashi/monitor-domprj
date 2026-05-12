@@ -24,11 +24,9 @@ def extrair_dados_com_ia(caminho_pdf):
         print("Fazendo upload do PDF para o Gemini...")
         arquivo_gemini = client.files.upload(file=caminho_pdf)
         
-        # Pausa de 5 segundos para garantir que o Google processou o PDF
         print("Aguardando processamento do arquivo no servidor...")
         time.sleep(5)
         
-        # Puxa o status atualizado do arquivo
         arquivo_gemini = client.files.get(name=arquivo_gemini.name)
         status_upload = str(arquivo_gemini.state).split('.')[-1]
         
@@ -50,13 +48,10 @@ def extrair_dados_com_ia(caminho_pdf):
         print(f"Analisando PDF com o modelo PRO (Status Upload: {status_upload})...")
         
         inicio_ia = time.time()
-        
-        # --- SOLUÇÃO: Mudança para o modelo PRO, focado em leitura profunda ---
         response = client.models.generate_content(
             model="gemini-1.5-pro", 
             contents=[arquivo_gemini, prompt]
         )
-        
         fim_ia = time.time()
         tempo_processamento = round(fim_ia - inicio_ia, 2)
         
@@ -72,7 +67,6 @@ def extrair_dados_com_ia(caminho_pdf):
         print(f"Erro na plataforma GEMINI: {e}")
         return [], f"Erro: {str(e)}", tempo_processamento
     finally:
-        # Limpeza do servidor
         if arquivo_gemini:
             try:
                 client.files.delete(name=arquivo_gemini.name)
@@ -113,16 +107,16 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ul, tem_dados, 
     endereco_url = url_pdf if localizado else "Não localizado"
     
     if tem_dados:
-        resultado_texto = f"Sucesso. {qtd_vagas} vagas de remoção extraídas e formatadas em anexo."
+        resultado_texto = f"Sucesso. {qtd_vagas} vagas de remocao extraidas e formatadas."
     else:
-        resultado_texto = "Dados de remoção não encontrados no documento."
+        resultado_texto = "Dados de remocao nao encontrados no documento."
 
     corpo = (
-        f"Relatório de Execução - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-        f"Pesquisa realizada para o Diário Oficial de {data_do}.\n\n"
-        f"--- MÉTRICAS DO SISTEMA ---\n"
+        f"Relatorio de Execucao - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+        f"Pesquisa realizada para o Diario Oficial de {data_do}.\n\n"
+        f"--- METRICAS DO SISTEMA ---\n"
         f"Arquivo DOe: {status_arquivo}\n"
-        f"Endereço URL: {endereco_url}\n"
+        f"Endereco URL: {endereco_url}\n"
         f"Status do Download: {status_dl} (Tamanho: {tamanho_kb} KB)\n"
         f"Status de Upload (Gemini): {status_ul}\n"
         f"Tempo de Leitura da IA: {tempo_ia} segundos\n\n"
@@ -133,15 +127,4 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ul, tem_dados, 
 
     if arquivo_excel:
         with open(arquivo_excel, 'rb') as f:
-            msg.add_attachment(f.read(), maintype='application', subtype='xlsx', filename=arquivo_excel)
-    if arquivo_pdf:
-        with open(arquivo_pdf, 'rb') as f:
-            msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=f"DO_MPRJ_{data_do.replace('/','-')}.pdf")
-
-    try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(EMAIL_REMETENTE, SENHA_APP)
-            smtp.send_message(msg)
-        print("Relatório de monitoramento enviado.")
-    except Exception as e:
-        print(f"Erro no envio do e-
+            msg.add_attachment(f.read(),
