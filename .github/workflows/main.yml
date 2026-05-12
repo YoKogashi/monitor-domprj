@@ -17,6 +17,6 @@ jobs:
         with:
           python-version: '3.9'
       - name: instalar bibliotecas
-        run: pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4 pandas openpyxl google-generativeai
       - name: rodar busca
         run: python busca_mprj.py
