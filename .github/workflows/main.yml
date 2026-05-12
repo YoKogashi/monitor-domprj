@@ -1,0 +1,22 @@
+name: Busca Diaria MPRJ
+
+on:
+  schedule:
+    # Isso faz o robô rodar todos os dias às 09:00 da manhã (horário UTC)
+    - cron: '0 12 * * *' 
+  workflow_dispatch: # Permite que você rode manualmente se quiser clicar num botão
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: baixar codigo
+        uses: actions/checkout@v2
+      - name: configurar python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      - name: instalar bibliotecas
+        run: pip install requests beautifulsoup4
+      - name: rodar busca
+        run: python busca_mprj.py
