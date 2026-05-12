@@ -5,7 +5,7 @@ import os
 import fitz  # PyMuPDF
 from google import genai
 from email.message import EmailMessage
-from datetime import datetime
+from datetime import datetime, timedelta # Adicionado timedelta
 from bs4 import BeautifulSoup
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
@@ -14,8 +14,6 @@ EMAIL_DESTINO = "renan.barros@mprj.mp.br"
 EMAIL_REMETENTE = "renan.help@gmail.com" 
 SENHA_APP = "saty tgmz rzrz yrai" 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-
-URL_SITE = "https://www.mprj.mp.br/busca?p_p_id=br_mp_mprj_internet_busca_web_BuscaPortlet&p_p_lifecycle=0&p_p_state=normal&p_p_mode=view&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj"
 
 def extrair_dados_com_ia(texto_bruto):
     try:
@@ -50,33 +48,37 @@ def formatar_excel(dados, arquivo, data_do):
         ws.column_dimensions['C'].width = 15
         ws.column_dimensions['D'].width = 55
 
-def enviar_email(data_hoje, arquivo_excel=None, arquivo_pdf=None):
+def enviar_email(data_do, arquivo_excel=None, arquivo_pdf=None):
     msg = EmailMessage()
     msg['From'] = EMAIL_REMETENTE
     msg['To'] = EMAIL_DESTINO
     
     if arquivo_excel:
-        msg['Subject'] = f'📊 Vagas de Remoção MPRJ - {data_hoje}'
-        msg.set_content(f'Olá Renan,\n\nA pesquisa identificou vagas de remoção. Seguem em anexo a planilha e o PDF original do Diário Oficial.')
-        # Anexa o Excel
+        msg['Subject'] = f'📊 Vagas de Remoção MPRJ - {data_do}'
+        msg.set_content(f'Olá Renan,\n\nIdentificamos vagas no Diário Oficial publicado em {data_do}. Seguem planilha e PDF em anexo.')
         with open(arquivo_excel, 'rb') as f:
             msg.add_attachment(f.read(), maintype='application', subtype='xlsx', filename=arquivo_excel)
-        # Anexa o PDF Original
         if arquivo_pdf:
             with open(arquivo_pdf, 'rb') as f:
-                msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=f"Diario_Oficial_{data_hoje.replace('/','-')}.pdf")
+                msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=f"DO_MPRJ_{data_do.replace('/','-')}.pdf")
     else:
-        msg['Subject'] = f'🔍 Monitoramento MPRJ - Varredura {data_hoje}'
-        msg.set_content(f'Olá Renan,\n\nPesquisa concluída. Nenhum edital de "Concurso de Remoção" foi localizado hoje.')
+        msg['Subject'] = f'🔍 Monitoramento MPRJ - {data_do}'
+        msg.set_content(f'Olá Renan,\n\nVarredura concluída para o dia {data_do}. Nenhuma vaga de remoção encontrada.')
 
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(EMAIL_REMETENTE, SENHA_APP)
         smtp.send_message(msg)
 
 def rodar():
-    data_hoje = datetime.now().strftime("%d/%m/%Y")
+    # AJUSTE: Agora busca a data de ONTEM
+    data_alvo = datetime.now() - timedelta(days=1)
+    data_str = data_alvo.strftime("%d/%m/%Y")
+    
+    # URL filtrando pela data de ontem
+    url_site = f"https://www.mprj.mp.br/busca?_br_mp_mprj_internet_busca_web_BuscaPortlet_data_inicial={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_data_final={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj"
+
     try:
-        response = requests.get(URL_SITE, timeout=30)
+        response = requests.get(url_site, timeout=30)
         soup = BeautifulSoup(response.text, 'html.parser')
         link_pdf = ""
         for a in soup.find_all('a', href=True):
@@ -85,10 +87,9 @@ def rodar():
                 break
 
         if not link_pdf:
-            enviar_email(data_hoje)
+            enviar_email(data_str)
             return
 
-        # Baixa o PDF para leitura e anexo
         pdf_content = requests.get(link_pdf).content
         pdf_local = "diario_oficial.pdf"
         with open(pdf_local, "wb") as f:
@@ -100,10 +101,10 @@ def rodar():
 
         if dados:
             excel_local = "Vagas_Remocao.xlsx"
-            formatar_excel(dados, excel_local, data_hoje)
-            enviar_email(data_hoje, arquivo_excel=excel_local, arquivo_pdf=pdf_local)
+            formatar_excel(dados, excel_local, data_str)
+            enviar_email(data_str, arquivo_excel=excel_local, arquivo_pdf=pdf_local)
         else:
-            enviar_email(data_hoje)
+            enviar_email(data_str)
             
     except Exception as e:
         print(f"Erro: {e}")
