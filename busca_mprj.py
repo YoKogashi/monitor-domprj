@@ -15,47 +15,34 @@ SENHA_APP = "saty tgmz rzrz yrai"
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(texto_bruto):
-    # Vamos usar a configuração mais simples possível do cliente
+    # Removi configurações extras para usar o padrão de fábrica
     client = genai.Client(api_key=GEMINI_KEY)
     
-    # Adicionamos o prefixo 'models/' que é o que o erro sugeriu estar faltando
-    modelo_operacional = "models/gemini-1.5-flash"
+    # Tentaremos o modelo Pro, que costuma estar disponível em todas as regiões v1
+    modelo_operacional = "gemini-1.5-pro"
     
     prompt = f"""
     Analise o texto abaixo e localize a seção "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
     Extraia as vagas listadas seguindo o formato: Item;Órgão;Critério;Origem da Vaga
-    Se não encontrar nada, escreva VAZIO.
     Texto: {texto_bruto}
     """
     
     try:
-        # Chamada com o nome do modelo completo
+        # Chamada direta e simplificada
         response = client.models.generate_content(
             model=modelo_operacional, 
             contents=prompt
         )
         
-        texto_resposta = response.text.strip()
-        
-        if "VAZIO" in texto_resposta or ";" not in texto_resposta:
+        if not response.text:
             return []
             
-        # Filtra apenas as linhas que contêm o separador ponto e vírgula
-        linhas = [l.strip() for l in texto_resposta.split('\n') if ';' in l]
+        linhas = [l.strip() for l in response.text.split('\n') if ';' in l]
         return [linha.split(';') for linha in linhas]
 
     except Exception as e:
-        # Se falhar com o prefixo, tentamos sem o prefixo como última instância
-        try:
-            response = client.models.generate_content(
-                model="gemini-1.5-flash", 
-                contents=prompt
-            )
-            linhas = [l.strip() for l in response.text.split('\n') if ';' in l]
-            return [linha.split(';') for linha in linhas]
-        except:
-            print(f"Erro persistente na IA: {e}")
-            return []
+        print(f"Erro na tentativa com {modelo_operacional}: {e}")
+        return []
 
 def formatar_excel(dados, arquivo, data_do):
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
