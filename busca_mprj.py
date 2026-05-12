@@ -73,7 +73,7 @@ def extrair_dados_com_ia(caminho_pdf):
         }
         
         # Testando direto com o modelo Flash mais robusto
-        url_api = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+        url_api = f"url_api = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
         
         inicio_ia = time.time()
         response = requests.post(url_api, headers=headers, json=payload)
