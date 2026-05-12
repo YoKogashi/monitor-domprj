@@ -4,7 +4,6 @@ import smtplib
 import os
 import time
 import fitz  # PyMuPDF
-from google import genai
 from email.message import EmailMessage
 from datetime import datetime
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -16,7 +15,6 @@ SENHA_APP = "saty tgmz rzrz yrai"
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(caminho_pdf):
-    client = genai.Client(api_key=GEMINI_KEY)
     tempo_processamento = 0
     status_ia = "Nao iniciado"
     
@@ -46,7 +44,7 @@ def extrair_dados_com_ia(caminho_pdf):
         if not texto_alvo:
             return [], "Falha: Secao nao encontrada no PDF", 0
 
-        print(f"Secao isolada! Enviando recorte de texto para o Gemini Flash...")
+        print(f"Secao isolada! Comunicando DIRETAMENTE com a API do Gemini...")
         status_ia = "Texto enviado com sucesso"
         
         prompt = f"""
@@ -69,27 +67,41 @@ def extrair_dados_com_ia(caminho_pdf):
         {texto_alvo}
         """
         
+        # --- COMUNICAÇÃO DIRETA (REST API) - BYPASS DE ERROS DA BIBLIOTECA ---
+        url_api = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+        headers = {'Content-Type': 'application/json'}
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1}
+        }
+        
         inicio_ia = time.time()
         
-        response = client.models.generate_content(
-            model="gemini-1.5-flash", 
-            contents=prompt
-        )
+        response = requests.post(url_api, headers=headers, json=payload)
         
         fim_ia = time.time()
         tempo_processamento = round(fim_ia - inicio_ia, 2)
         
-        res = response.text.strip()
-        
-        if "VAZIO" in res or ";" not in res:
-            return [], status_ia, tempo_processamento
+        if response.status_code == 200:
+            dados_json = response.json()
+            try:
+                res = dados_json['candidates'][0]['content']['parts'][0]['text'].strip()
+            except KeyError:
+                return [], "Erro ao interpretar resposta da API", tempo_processamento
             
-        linhas = [l.strip() for l in res.split('\n') if ';' in l]
-        return [linha.split(';') for linha in linhas], status_ia, tempo_processamento
+            if "VAZIO" in res or ";" not in res:
+                return [], status_ia, tempo_processamento
+                
+            linhas = [l.strip() for l in res.split('\n') if ';' in l]
+            return [linha.split(';') for linha in linhas], status_ia, tempo_processamento
+        else:
+            erro_msg = f"Erro {response.status_code}: {response.text}"
+            print(erro_msg)
+            return [], f"Erro na API ({response.status_code})", tempo_processamento
         
     except Exception as e:
-        print(f"Erro na plataforma GEMINI: {e}")
-        return [], f"Erro: {str(e)}", tempo_processamento
+        print(f"Erro no processamento da IA: {e}")
+        return [], f"Erro crítico: {str(e)}", tempo_processamento
 
 def formatar_excel(dados, arquivo, data_do):
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
@@ -121,16 +133,16 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
     msg['To'] = EMAIL_DESTINO
     msg['Subject'] = f"Monitoramento DOeMPRJ - {data_do}"
     
-    status_arquivo = "Localizado" if localizado else "Não localizado"
-    endereco_url = url_pdf if localizado else "Não localizado"
+    status_arquivo = "Localizado" if localizado else "Nao localizado"
+    endereco_url = url_pdf if localizado else "Nao localizado"
     
-    # Texto de resultado em destaque no topo
+    # Texto de resultado no topo
     if tem_dados:
         resultado_texto = f"Sucesso. {qtd_vagas} vagas de remocao extraidas e informadas no arquivo em anexo."
     else:
-        resultado_texto = "Dados de remocao nao encontrados."
+        resultado_texto = "Dados de remocao nao encontrados no documento."
 
-    # Nova formatação exata conforme solicitado
+    # Formatação exata solicitada
     corpo = (
         f"{resultado_texto}\n\n"
         f"--------------------------------------------\n"
@@ -142,7 +154,7 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
         f"Endereco URL: {endereco_url}\n"
         f"Status do Download: {status_dl} (Tamanho: {tamanho_kb} KB)\n"
         f"Comunicacao com IA: {status_ia}\n"
-        f"Tempo de Leitura da IA: {tempo_ia} segundos\n"
+        f"Tempo de Leitura da IA: {tempo_ia} segundos"
     )
     msg.set_content(corpo)
 
@@ -157,7 +169,7 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(EMAIL_REMETENTE, SENHA_APP)
             smtp.send_message(msg)
-        print("E-mail formatado enviado com sucesso.")
+        print("E-mail enviado com sucesso.")
     except Exception as e:
         print(f"Erro no envio do e-mail: {e}")
 
@@ -186,7 +198,7 @@ def rodar():
 
             tamanho_pdf_kb = round(os.path.getsize(pdf_local) / 1024, 2)
 
-            # Usando a estratégia Sniper para evitar erro 404
+            # Executa a IA (via REST API)
             dados, status_ia, tempo_processamento = extrair_dados_com_ia(pdf_local)
 
             if dados:
