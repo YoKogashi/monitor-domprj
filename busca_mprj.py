@@ -24,7 +24,7 @@ def extrair_dados_com_ia(caminho_pdf):
         print("Fazendo upload do PDF para o Gemini...")
         arquivo_gemini = client.files.upload(file=caminho_pdf)
         
-        print("Aguardando processamento do arquivo no servidor...")
+        print("Aguardando 5 segundos para o servidor processar o arquivo...")
         time.sleep(5)
         
         arquivo_gemini = client.files.get(name=arquivo_gemini.name)
@@ -48,10 +48,13 @@ def extrair_dados_com_ia(caminho_pdf):
         print(f"Analisando PDF com o modelo PRO (Status Upload: {status_upload})...")
         
         inicio_ia = time.time()
+        
+        # AQUI ESTÁ A CORREÇÃO FUNDAMENTAL: Uso do modelo PRO
         response = client.models.generate_content(
             model="gemini-1.5-pro", 
             contents=[arquivo_gemini, prompt]
         )
+        
         fim_ia = time.time()
         tempo_processamento = round(fim_ia - inicio_ia, 2)
         
