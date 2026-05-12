@@ -12,7 +12,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 # --- CONFIGURAÇÕES ---
 EMAIL_DESTINO = "renan.barros@mprj.mp.br"
 EMAIL_REMETENTE = "renan.help@gmail.com" 
-SENHA_APP = "saty tgmz rzrz yrai" 
+SENHA_APP = "saty tgmz rzrz yrai"  
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(texto_bruto):
@@ -54,34 +54,30 @@ def enviar_email(data_do, arquivo_excel=None, arquivo_pdf=None):
     msg['To'] = EMAIL_DESTINO
     
     if arquivo_excel:
-        msg['Subject'] = f'📊 Vagas de Remoção MPRJ - {data_do}'
-        msg.set_content(f'Olá Renan,\n\nIdentificamos vagas no Diário Oficial de {data_do}. Seguem a planilha e o PDF em anexo.')
+        msg['Subject'] = f'📊 TESTE: Vagas de Remoção - {data_do}'
+        msg.set_content(f'Olá Renan,\n\nTeste concluído para o dia {data_do}.\nO robô encontrou dados e gerou a planilha em anexo junto com o PDF.')
         with open(arquivo_excel, 'rb') as f:
             msg.add_attachment(f.read(), maintype='application', subtype='xlsx', filename=arquivo_excel)
     else:
-        msg['Subject'] = f'🔍 Monitoramento MPRJ - {data_do}'
-        msg.set_content(f'Olá Renan,\n\nVarredura concluída para o dia {data_do}. Nenhuma vaga de remoção foi encontrada, mas o PDF segue em anexo para conferência.')
+        msg['Subject'] = f'🔍 TESTE: Monitoramento - {data_do}'
+        msg.set_content(f'Olá Renan,\n\nO robô rodou para o dia {data_do}, mas não identificou vagas de remoção no PDF anexado.')
 
     if arquivo_pdf:
-        try:
-            with open(arquivo_pdf, 'rb') as f:
-                nome_pdf = f"DO_MPRJ_{data_do.replace('/','-')}.pdf"
-                msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=nome_pdf)
-        except Exception as e:
-            print(f"Erro ao anexar PDF: {e}")
+        with open(arquivo_pdf, 'rb') as f:
+            nome_pdf = f"TESTE_DO_MPRJ_{data_do.replace('/','-')}.pdf"
+            msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=nome_pdf)
 
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(EMAIL_REMETENTE, SENHA_APP)
         smtp.send_message(msg)
 
 def rodar():
-    # 1. Define a data de ONTEM
-    data_alvo = datetime.now() - timedelta(days=1)
-    data_str = data_alvo.strftime("%d/%m/%Y")
+    # --- MUDANÇA APENAS PARA O TESTE ---
+    data_str = "08/05/2026" 
+    # -----------------------------------
     
-    print(f"Iniciando varredura para a data: {data_str}")
-    
-    url_site = f"https://www.mprj.mp.br/busca?p_p_id=br_mp_mprj_internet_busca_web_BuscaPortlet&p_p_lifecycle=0&p_p_state=normal&p_p_mode=view&_br_mp_mprj_internet_busca_web_BuscaPortlet_periodo_param=mes&_br_mp_mprj_internet_busca_web_BuscaPortlet_order_param=desc&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj&_br_mp_mprj_internet_busca_web_BuscaPortlet_exibicao_param=lista&_br_mp_mprj_internet_busca_web_BuscaPortlet_jspPage=%2Fhtml%2Fview.jsp&_br_mp_mprj_internet_busca_web_BuscaPortlet_revistas_param=todasRev"
+    print(f"Iniciando teste de extração para: {data_str}")
+    url_site = f"https://www.mprj.mp.br/busca?_br_mp_mprj_internet_busca_web_BuscaPortlet_data_inicial={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_data_final={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj"
 
     try:
         response = requests.get(url_site, timeout=30)
@@ -94,18 +90,15 @@ def rodar():
                 break
 
         if not link_pdf:
-            print("Nenhum link de PDF encontrado para esta data.")
+            print(f"Não encontrei PDF para o dia {data_str}")
             enviar_email(data_str)
             return
 
-        # 2. Download do PDF
-        print(f"Baixando PDF: {link_pdf}")
         pdf_content = requests.get(link_pdf).content
         pdf_local = "diario_oficial.pdf"
         with open(pdf_local, "wb") as f:
             f.write(pdf_content)
 
-        # 3. Leitura e Extração
         doc = fitz.open(pdf_local)
         texto_pdf = "".join([pag.get_text() for pag in doc])
         dados = extrair_dados_com_ia(texto_pdf)
@@ -114,13 +107,11 @@ def rodar():
             excel_local = "Vagas_Remocao.xlsx"
             formatar_excel(dados, excel_local, data_str)
             enviar_email(data_str, arquivo_excel=excel_local, arquivo_pdf=pdf_local)
-            print("E-mail com planilha e PDF enviado.")
         else:
             enviar_email(data_str, arquivo_pdf=pdf_local)
-            print("E-mail apenas com PDF enviado (sem vagas encontradas).")
             
     except Exception as e:
-        print(f"Erro durante a execução: {e}")
+        print(f"Erro: {e}")
 
 if __name__ == "__main__":
     rodar()
