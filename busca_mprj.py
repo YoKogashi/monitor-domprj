@@ -14,39 +14,42 @@ EMAIL_REMETENTE = "renan.help@gmail.com"
 SENHA_APP = "saty tgmz rzrz yrai" 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
-def extrair_dados_com_ia(texto_relevante):
+def extrair_dados_com_ia(texto_completo):
     """
-    Prompt otimizado para identificar o padrão de vagas do MPRJ 
-    independente da numeração dos itens.
+    Agora a IA recebe o documento INTEIRO e usa sua inteligência 
+    para varrer e encontrar a seção de remoção.
     """
     try:
         client = genai.Client(api_key=GEMINI_KEY)
         
         prompt = f"""
         Você é um analista de dados especialista em Diários Oficiais.
-        Sua missão é extrair vagas de CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA do texto abaixo.
+        Abaixo está o texto COMPLETO de um Diário Oficial. 
+        Sua missão é varrer todo o documento e extrair as vagas do "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
 
         ESTRUTURA DE BUSCA:
-        - Localize itens que descrevam uma Promotoria de Justiça.
+        - Procure a seção principal que fala sobre Concurso de Remoção para Promotor.
+        - Identifique itens que descrevam uma Promotoria de Justiça.
         - Identifique o trecho "vaga decorrente de..." ou "vaga decorrente da...".
         - Identifique o critério (Antiguidade ou Merecimento) que aparece entre parênteses.
 
         REGRAS DE EXTRAÇÃO:
-        1. Capture o Identificador (ex: 4.1, 1, A, etc).
-        2. Capture o Órgão (Nome da Promotoria).
+        1. Capture o Identificador Numérico do item (ex: 4.1, 4.2, 1, 2, etc).
+        2. Capture o Órgão (Nome completo da Promotoria).
         3. Capture o Critério (Apenas 'Antiguidade' ou 'Merecimento').
-        4. Capture a Origem (O motivo completo: ex: "Promoção de Fulano de Tal").
+        4. Capture a Origem (O motivo completo: ex: "Promoção de Fulano de Tal" ou "Aposentadoria de Sicrano").
 
         SAÍDA OBRIGATÓRIA (Separada por ponto e vírgula):
         Item;Órgão;Critério;Origem da Vaga
 
-        Importante: Se encontrar as vagas mas elas não tiverem número, invente uma sequência (1, 2, 3). 
-        Retorne APENAS as linhas de dados. Se não houver vagas de remoção, responda: VAZIO.
+        Importante: Retorne APENAS as linhas de dados extraídas. Não escreva textos de introdução.
+        Se não houver vagas de remoção no documento inteiro, responda apenas: VAZIO.
 
-        TEXTO PARA ANÁLISE:
-        {texto_relevante}
+        TEXTO DO DIÁRIO OFICIAL COMPLETO:
+        {texto_completo}
         """
         
+        # Como o texto é grande, garantimos o envio com o modelo Flash
         response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
         res = response.text.strip()
         
@@ -117,9 +120,9 @@ def enviar_email(data_do, url_pdf, localizado, tem_dados, arquivo_excel=None, ar
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(EMAIL_REMETENTE, SENHA_APP)
             smtp.send_message(msg)
-        print("Relatório enviado.")
+        print("Relatório enviado com sucesso.")
     except Exception as e:
-        print(f"Erro no envio: {e}")
+        print(f"Erro no envio do e-mail: {e}")
 
 def rodar():
     # --- DATA DE TESTE (08/05/2026) ---
@@ -137,28 +140,30 @@ def rodar():
         with open(pdf_local, "wb") as f:
             f.write(response.content)
 
+        # Extrai TODO o texto do PDF sem filtros
+        print("Lendo o PDF completo...")
         doc = fitz.open(pdf_local)
-        texto_acumulado = ""
-        
-        # Leitura aprimorada: foca em páginas com os termos chave
+        texto_completo = ""
         for pagina in doc:
-            texto_pag = pagina.get_text("text")
-            if "CONCURSO DE REMOÇÃO" in texto_pag.upper() and "PROMOTOR" in texto_pag.upper():
-                texto_acumulado += texto_pag + "\n"
+            texto_completo += pagina.get_text("text") + "\n"
         doc.close()
 
-        if not texto_acumulado:
+        if not texto_completo.strip():
+            print("PDF lido, mas estava vazio (imagens sem texto).")
             enviar_email(data_exibicao, url_pdf, True, False, arquivo_pdf=pdf_local)
             return
 
-        # IA agora usa um prompt mais flexível para extrair os 15 itens
-        dados = extrair_dados_com_ia(texto_acumulado)
+        # Envia o documento inteiro para a IA pesquisar
+        print("Enviando documento completo para o Gemini...")
+        dados = extrair_dados_com_ia(texto_completo)
 
         if dados:
+            print(f"Sucesso! {len(dados)} itens extraídos.")
             excel_local = "Vagas_Encontradas.xlsx"
             formatar_excel(dados, excel_local, data_exibicao)
             enviar_email(data_exibicao, url_pdf, True, True, excel_local, pdf_local)
         else:
+            print("Gemini varreu o texto, mas não localizou vagas.")
             enviar_email(data_exibicao, url_pdf, True, False, arquivo_pdf=pdf_local)
             
     except Exception as e:
