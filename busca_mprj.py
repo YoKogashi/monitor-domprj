@@ -45,7 +45,6 @@ def extrair_dados_com_ia(caminho_pdf):
             return [], "Falha: Secao nao encontrada no PDF", 0
 
         print(f"Secao isolada! Comunicando DIRETAMENTE com a API do Gemini...")
-        status_ia = "Texto enviado com sucesso"
         
         prompt = f"""
         Você é um analista de dados especialista em Diários Oficiais.
@@ -67,22 +66,22 @@ def extrair_dados_com_ia(caminho_pdf):
         {texto_alvo}
         """
         
-        # --- COMUNICAÇÃO DIRETA (REST API) - BYPASS DE ERROS DA BIBLIOTECA ---
-        url_api = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
         headers = {'Content-Type': 'application/json'}
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.1}
         }
         
+        # Testando direto com o modelo Flash mais robusto
+        url_api = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+        
         inicio_ia = time.time()
-        
         response = requests.post(url_api, headers=headers, json=payload)
-        
         fim_ia = time.time()
         tempo_processamento = round(fim_ia - inicio_ia, 2)
         
         if response.status_code == 200:
+            status_ia = "Sucesso na comunicacao"
             dados_json = response.json()
             try:
                 res = dados_json['candidates'][0]['content']['parts'][0]['text'].strip()
@@ -101,7 +100,7 @@ def extrair_dados_com_ia(caminho_pdf):
         
     except Exception as e:
         print(f"Erro no processamento da IA: {e}")
-        return [], f"Erro crítico: {str(e)}", tempo_processamento
+        return [], f"Erro critico: {str(e)}", tempo_processamento
 
 def formatar_excel(dados, arquivo, data_do):
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
@@ -136,25 +135,23 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
     status_arquivo = "Localizado" if localizado else "Nao localizado"
     endereco_url = url_pdf if localizado else "Nao localizado"
     
-    # Texto de resultado no topo
     if tem_dados:
         resultado_texto = f"Sucesso. {qtd_vagas} vagas de remocao extraidas e informadas no arquivo em anexo."
     else:
-        resultado_texto = "Dados de remocao nao encontrados no documento."
+        resultado_texto = "Dados de remocao nao encontrados."
 
-    # Formatação exata solicitada
+    # Formatação exata do e-mail
     corpo = (
+        f"Pesquisa realizada para o Diario Oficial de {data_do}.\n"
         f"{resultado_texto}\n\n"
-        f"--------------------------------------------\n"
+        f"-------------------------------------------------\n"
         f"Relatorio de Execucao - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-        f"--------------------------------------------\n\n"
-        f"Pesquisa realizada para o Diario Oficial de {data_do}.\n\n"
-        f"--- METRICAS DO SISTEMA ---\n"
+        f"-------------------------------------------------\n\n"
         f"Arquivo DOe: {status_arquivo}\n"
         f"Endereco URL: {endereco_url}\n"
         f"Status do Download: {status_dl} (Tamanho: {tamanho_kb} KB)\n"
         f"Comunicacao com IA: {status_ia}\n"
-        f"Tempo de Leitura da IA: {tempo_ia} segundos"
+        f"Tempo de Leitura da IA: {tempo_ia} segundos\n"
     )
     msg.set_content(corpo)
 
@@ -169,7 +166,7 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(EMAIL_REMETENTE, SENHA_APP)
             smtp.send_message(msg)
-        print("E-mail enviado com sucesso.")
+        print("E-mail formatado enviado com sucesso.")
     except Exception as e:
         print(f"Erro no envio do e-mail: {e}")
 
@@ -198,7 +195,6 @@ def rodar():
 
             tamanho_pdf_kb = round(os.path.getsize(pdf_local) / 1024, 2)
 
-            # Executa a IA (via REST API)
             dados, status_ia, tempo_processamento = extrair_dados_com_ia(pdf_local)
 
             if dados:
