@@ -17,29 +17,40 @@ GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 def extrair_dados_com_ia(texto_bruto):
     client = genai.Client(api_key=GEMINI_KEY)
     
-    # Tentamos o modelo mais estável e rápido atual
-    modelo_escolhido = "gemini-1.5-flash"
+    # O modelo que queremos usar como padrão
+    modelo_padrao = "gemini-1.5-flash"
     
     prompt = f"""
     Analise o texto e localize "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
-    Retorne no formato: Item;Órgão;Critério;Origem da Vaga
+    Extraia as vagas listadas seguindo este formato rigoroso, separando por ponto e vírgula (;):
+    Item;Órgão;Critério;Origem da Vaga
+    
+    Retorne APENAS os dados. Se não encontrar nada, retorne 'VAZIO'.
     Texto: {texto_bruto}
     """
     
     try:
-        # Tenta rodar com o modelo padrão
+        # Tentativa 1: Modelo Padrão
         response = client.models.generate_content(
-            model=modelo_escolhido, contents=prompt
+            model=modelo_padrao, contents=prompt
         )
-    except Exception as e:
-        print(f"Modelo {modelo_escolhido} falhou ou foi descontinuado. Tentando plano B...")
-        # PLANO B: Busca automática pelo modelo disponível mais recente
-        modelos = client.models.list()
-        # Pega o primeiro modelo que suporte geração de conteúdo e seja da família 'gemini'
-        modelo_alternativo = next(m.name for m in modelos if 'generateContent' in m.supported_methods)
-        response = client.models.generate_content(
-            model=modelo_alternativo, contents=prompt
-        )
+    except Exception:
+        print(f"Modelo {modelo_padrao} indisponível. Buscando alternativa...")
+        try:
+            # PLANO B: Lista os modelos e pega o primeiro que permite gerar conteúdo
+            for m in client.models.list():
+                # A nova biblioteca usa 'supported_generate_content_methods' ou similar
+                # Mas para simplificar e ser infalível, pegamos o primeiro modelo 'flash' ou 'pro' da lista
+                if "generateContent" in m.supported_methods or "generate_content" in str(m).lower():
+                    modelo_alternativo = m.name
+                    print(f"Usando modelo alternativo: {modelo_alternativo}")
+                    response = client.models.generate_content(
+                        model=modelo_alternativo, contents=prompt
+                    )
+                    break
+        except Exception as e:
+            print(f"Erro crítico: Não foi possível encontrar nenhum modelo funcional. {e}")
+            return []
     
     texto_resposta = response.text.strip()
     if "VAZIO" in texto_resposta or ";" not in texto_resposta:
