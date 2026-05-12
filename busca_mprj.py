@@ -72,7 +72,7 @@ def extrair_dados_com_ia(caminho_pdf):
             "generationConfig": {"temperature": 0.1}
         }
         
-        # Testando direto com o modelo Flash mais robusto
+        # O modelo testado e vitorioso
         url_api = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
         
         inicio_ia = time.time()
@@ -107,24 +107,46 @@ def formatar_excel(dados, arquivo, data_do):
     with pd.ExcelWriter(arquivo, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, startrow=2, sheet_name='Vagas')
         ws = writer.sheets['Vagas']
+        
+        # --- TÍTULO ---
         ws.merge_cells('A1:D1')
         ws['A1'] = f"Resultados encontrados no DOeMPRJ de {data_do}"
         ws['A1'].font = Font(size=14, bold=True, color="2F5597")
-        ws['A1'].alignment = Alignment(horizontal='center')
+        ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+        
+        # --- CABEÇALHO ---
         header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
         for cell in ws[3]:
             cell.fill = header_fill
             cell.font = Font(color="FFFFFF", bold=True)
-            cell.alignment = Alignment(horizontal='center')
-        ws.column_dimensions['A'].width = 10
-        ws.column_dimensions['B'].width = 50
-        ws.column_dimensions['C'].width = 15
-        ws.column_dimensions['D'].width = 55
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # --- BORDAS E ALINHAMENTO ---
         border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
         for row in ws.iter_rows(min_row=3, max_row=len(dados)+3):
             for cell in row:
                 cell.border = border
                 cell.alignment = Alignment(wrap_text=True, vertical='center')
+
+        # --- AJUSTE DE ALTURA DAS LINHAS (25 pts) ---
+        for row_idx in range(1, len(dados) + 4):
+            ws.row_dimensions[row_idx].height = 25
+            
+        # --- LARGURA AUTOMÁTICA DAS COLUNAS AJUSTADA AO CONTEÚDO ---
+        # Ignoramos a primeira e segunda linhas (título) para o cálculo da largura
+        for col in ws.iter_cols(min_row=3, max_row=len(dados)+3, min_col=1, max_col=4):
+            max_length = 0
+            col_letter = col[0].column_letter # A, B, C ou D
+            
+            for cell in col:
+                if cell.value:
+                    # Calcula o comprimento verificando possíveis quebras de linha
+                    tamanho_texto = max([len(linha) for linha in str(cell.value).split('\n')])
+                    if tamanho_texto > max_length:
+                        max_length = tamanho_texto
+            
+            # Aplica a largura encontrada + 3 pontos de margem de respiro
+            ws.column_dimensions[col_letter].width = max_length + 3
 
 def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, arquivo_excel=None, arquivo_pdf=None):
     msg = EmailMessage()
@@ -140,13 +162,13 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
     else:
         resultado_texto = "Dados de remocao nao encontrados."
 
-    # Formatação exata do e-mail
+    # Formatação exata do corpo do e-mail
     corpo = (
         f"Pesquisa realizada para o Diario Oficial de {data_do}.\n"
         f"{resultado_texto}\n\n"
-        f"-------------------------------------------------\n"
+        f"-----------------------------------------------------------\n"
         f"Relatorio de Execucao - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-        f"-------------------------------------------------\n\n"
+        f"-----------------------------------------------------------\n\n"
         f"Arquivo DOe: {status_arquivo}\n"
         f"Endereco URL: {endereco_url}\n"
         f"Status do Download: {status_dl} (Tamanho: {tamanho_kb} KB)\n"
