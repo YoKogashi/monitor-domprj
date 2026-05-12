@@ -8,8 +8,8 @@ import google.generativeai as genai
 
 # --- CONFIGURAÇÕES ---
 EMAIL_DESTINO = "renan.barros@mprj.mp.br"
-EMAIL_REMETENTE = "SEU-EMAIL@gmail.com" # <--- MUDE AQUI
-SENHA_APP = "SUA-SENHA-DE-16-LETRAS"    # <--- COLE AQUI A SENHA DO GMAIL
+EMAIL_REMETENTE = "renan.help@gmail.com" # <--- MUDE AQUI
+SENHA_APP = "saty tgmz rzrz yrai"    # <--- COLE AQUI A SENHA DO GMAIL
 GEMINI_KEY = os.getenv("GEMINI_API_KEY") # Pega a chave que guardou no GitHub
 
 URL_SITE = "https://www.mprj.mp.br/busca?p_p_id=br_mp_mprj_internet_busca_web_BuscaPortlet&p_p_lifecycle=0&p_p_state=normal&p_p_mode=view&p_p_col_id=column-1&p_p_col_count=1&_br_mp_mprj_internet_busca_web_BuscaPortlet_jspPage=%2Fhtml%2Fview.jsp&_br_mp_mprj_internet_busca_web_BuscaPortlet_exibicao_param=card&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj&_br_mp_mprj_internet_busca_web_BuscaPortlet_delta=15&_br_mp_mprj_internet_busca_web_BuscaPortlet_keywords=&_br_mp_mprj_internet_busca_web_BuscaPortlet_advancedSearch=false&_br_mp_mprj_internet_busca_web_BuscaPortlet_andOperator=true&_br_mp_mprj_internet_busca_web_BuscaPortlet_resetCur=false&_br_mp_mprj_internet_busca_web_BuscaPortlet_cur=1"
