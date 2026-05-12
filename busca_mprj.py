@@ -5,7 +5,7 @@ import os
 import fitz  # PyMuPDF
 from google import genai
 from email.message import EmailMessage
-from datetime import datetime, timedelta # Adicionado timedelta
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
@@ -62,37 +62,65 @@ def enviar_email(data_do, arquivo_excel=None, arquivo_pdf=None):
         msg['Subject'] = f'🔍 Monitoramento MPRJ - {data_do}'
         msg.set_content(f'Olá Renan,\n\nVarredura concluída para o dia {data_do}. Nenhuma vaga de remoção foi encontrada, mas o PDF segue em anexo para conferência.')
 
-    # Esta linha garante que o PDF é enviado mesmo que não existam vagas
     if arquivo_pdf:
-        with open(arquivo_pdf, 'rb') as f:
-            nome_pdf = f"DO_MPRJ_{data_do.replace('/','-')}.pdf"
-            msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=nome_pdf)
+        try:
+            with open(arquivo_pdf, 'rb') as f:
+                nome_pdf = f"DO_MPRJ_{data_do.replace('/','-')}.pdf"
+                msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=nome_pdf)
+        except Exception as e:
+            print(f"Erro ao anexar PDF: {e}")
 
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(EMAIL_REMETENTE, SENHA_APP)
         smtp.send_message(msg)
 
 def rodar():
-    # ... (código anterior de busca e download do PDF permanece igual) ...
+    # 1. Define a data de ONTEM
+    data_alvo = datetime.now() - timedelta(days=1)
+    data_str = data_alvo.strftime("%d/%m/%Y")
     
-    if not link_pdf:
-        enviar_email(data_str) # Caso nem o link do PDF seja encontrado
-        return
+    print(f"Iniciando varredura para a data: {data_str}")
+    
+    url_site = f"https://www.mprj.mp.br/busca?_br_mp_mprj_internet_busca_web_BuscaPortlet_data_inicial={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_data_final={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj"
 
-    # Download do PDF
-    pdf_content = requests.get(link_pdf).content
-    pdf_local = "diario_oficial.pdf"
-    with open(pdf_local, "wb") as f:
-        f.write(pdf_content)
+    try:
+        response = requests.get(url_site, timeout=30)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        link_pdf = ""
+        for a in soup.find_all('a', href=True):
+            if 'pdf' in a['href'].lower():
+                link_pdf = a['href'] if a['href'].startswith('http') else "https://www.mprj.mp.br" + a['href']
+                break
 
-    doc = fitz.open(pdf_local)
-    texto_pdf = "".join([pag.get_text() for pag in doc])
-    dados = extrair_dados_com_ia(texto_pdf)
+        if not link_pdf:
+            print("Nenhum link de PDF encontrado para esta data.")
+            enviar_email(data_str)
+            return
 
-    if dados:
-        excel_local = "Vagas_Remocao.xlsx"
-        formatar_excel(dados, excel_local, data_str)
-        enviar_email(data_str, arquivo_excel=excel_local, arquivo_pdf=pdf_local)
-    else:
-        # AGORA ENVIA O PDF MESMO SEM DADOS EXTRAÍDOS
-        enviar_email(data_str, arquivo_pdf=pdf_local)
+        # 2. Download do PDF
+        print(f"Baixando PDF: {link_pdf}")
+        pdf_content = requests.get(link_pdf).content
+        pdf_local = "diario_oficial.pdf"
+        with open(pdf_local, "wb") as f:
+            f.write(pdf_content)
+
+        # 3. Leitura e Extração
+        doc = fitz.open(pdf_local)
+        texto_pdf = "".join([pag.get_text() for pag in doc])
+        dados = extrair_dados_com_ia(texto_pdf)
+
+        if dados:
+            excel_local = "Vagas_Remocao.xlsx"
+            formatar_excel(dados, excel_local, data_str)
+            enviar_email(data_str, arquivo_excel=excel_local, arquivo_pdf=pdf_local)
+            print("E-mail com planilha e PDF enviado.")
+        else:
+            enviar_email(data_str, arquivo_pdf=pdf_local)
+            print("E-mail apenas com PDF enviado (sem vagas encontradas).")
+            
+    except Exception as e:
+        print(f"Erro durante a execução: {e}")
+
+if __name__ == "__main__":
+    rodar()
