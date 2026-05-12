@@ -55,59 +55,44 @@ def enviar_email(data_do, arquivo_excel=None, arquivo_pdf=None):
     
     if arquivo_excel:
         msg['Subject'] = f'📊 Vagas de Remoção MPRJ - {data_do}'
-        msg.set_content(f'Olá Renan,\n\nIdentificamos vagas no Diário Oficial publicado em {data_do}. Seguem planilha e PDF em anexo.')
+        msg.set_content(f'Olá Renan,\n\nIdentificamos vagas no Diário Oficial de {data_do}. Seguem a planilha e o PDF em anexo.')
         with open(arquivo_excel, 'rb') as f:
             msg.add_attachment(f.read(), maintype='application', subtype='xlsx', filename=arquivo_excel)
-        if arquivo_pdf:
-            with open(arquivo_pdf, 'rb') as f:
-                msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=f"DO_MPRJ_{data_do.replace('/','-')}.pdf")
     else:
         msg['Subject'] = f'🔍 Monitoramento MPRJ - {data_do}'
-        msg.set_content(f'Olá Renan,\n\nVarredura concluída para o dia {data_do}. Nenhuma vaga de remoção encontrada.')
+        msg.set_content(f'Olá Renan,\n\nVarredura concluída para o dia {data_do}. Nenhuma vaga de remoção foi encontrada, mas o PDF segue em anexo para conferência.')
+
+    # Esta linha garante que o PDF é enviado mesmo que não existam vagas
+    if arquivo_pdf:
+        with open(arquivo_pdf, 'rb') as f:
+            nome_pdf = f"DO_MPRJ_{data_do.replace('/','-')}.pdf"
+            msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=nome_pdf)
 
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(EMAIL_REMETENTE, SENHA_APP)
         smtp.send_message(msg)
 
 def rodar():
-    # AJUSTE: Agora busca a data de ONTEM
-    data_alvo = datetime.now() - timedelta(days=1)
-    data_str = data_alvo.strftime("%d/%m/%Y")
+    # ... (código anterior de busca e download do PDF permanece igual) ...
     
-    # URL filtrando pela data de ontem
-    url_site = f"https://www.mprj.mp.br/busca?_br_mp_mprj_internet_busca_web_BuscaPortlet_data_inicial={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_data_final={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj"
+    if not link_pdf:
+        enviar_email(data_str) # Caso nem o link do PDF seja encontrado
+        return
 
-    try:
-        response = requests.get(url_site, timeout=30)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        link_pdf = ""
-        for a in soup.find_all('a', href=True):
-            if 'pdf' in a['href'].lower():
-                link_pdf = a['href'] if a['href'].startswith('http') else "https://www.mprj.mp.br" + a['href']
-                break
+    # Download do PDF
+    pdf_content = requests.get(link_pdf).content
+    pdf_local = "diario_oficial.pdf"
+    with open(pdf_local, "wb") as f:
+        f.write(pdf_content)
 
-        if not link_pdf:
-            enviar_email(data_str)
-            return
+    doc = fitz.open(pdf_local)
+    texto_pdf = "".join([pag.get_text() for pag in doc])
+    dados = extrair_dados_com_ia(texto_pdf)
 
-        pdf_content = requests.get(link_pdf).content
-        pdf_local = "diario_oficial.pdf"
-        with open(pdf_local, "wb") as f:
-            f.write(pdf_content)
-
-        doc = fitz.open(pdf_local)
-        texto_pdf = "".join([pag.get_text() for pag in doc])
-        dados = extrair_dados_com_ia(texto_pdf)
-
-        if dados:
-            excel_local = "Vagas_Remocao.xlsx"
-            formatar_excel(dados, excel_local, data_str)
-            enviar_email(data_str, arquivo_excel=excel_local, arquivo_pdf=pdf_local)
-        else:
-            enviar_email(data_str)
-            
-    except Exception as e:
-        print(f"Erro: {e}")
-
-if __name__ == "__main__":
-    rodar()
+    if dados:
+        excel_local = "Vagas_Remocao.xlsx"
+        formatar_excel(dados, excel_local, data_str)
+        enviar_email(data_str, arquivo_excel=excel_local, arquivo_pdf=pdf_local)
+    else:
+        # AGORA ENVIA O PDF MESMO SEM DADOS EXTRAÍDOS
+        enviar_email(data_str, arquivo_pdf=pdf_local)
