@@ -17,7 +17,7 @@ jobs:
           python-version: '3.10' # Atualizado para versão estável
       - name: instalar bibliotecas
         run: |
-          pip install requests beautifulsoup4 pandas openpyxl google-genai
+          run: pip install requests beautifulsoup4 pandas openpyxl google-genai PyMuPDF
       - name: rodar busca
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
