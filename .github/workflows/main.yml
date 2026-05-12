@@ -2,9 +2,9 @@ name: Busca Diaria MPRJ
 
 on:
   schedule:
-    # 13:00 UTC = 10:00 AM Brasília
+    # 13:00 UTC = 10:00 AM no Horário de Brasília
     - cron: '0 13 * * *' 
-  workflow_dispatch: 
+  workflow_dispatch: # Permite que você rode manualmente clicando no botão
 
 jobs:
   build:
@@ -12,13 +12,19 @@ jobs:
     steps:
       - name: baixar codigo
         uses: actions/checkout@v4
+
       - name: configurar python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+
       - name: instalar bibliotecas
-        run: pip install requests beautifulsoup4 pandas openpyxl google-genai PyMuPDF
+        # Instalamos as bibliotecas necessárias para Excel, PDF, Web e IA
+        run: |
+          pip install requests beautifulsoup4 pandas openpyxl google-genai PyMuPDF
+
       - name: rodar busca
         env:
+          # Puxa a chave que você salvou nos 'Secrets' do GitHub
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python busca_mprj.py
