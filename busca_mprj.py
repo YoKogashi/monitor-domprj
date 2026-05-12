@@ -81,7 +81,7 @@ def rodar():
     
     print(f"Iniciando varredura para a data: {data_str}")
     
-    url_site = f"https://www.mprj.mp.br/busca?_br_mp_mprj_internet_busca_web_BuscaPortlet_data_inicial={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_data_final={data_str}&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj"
+    url_site = f"https://www.mprj.mp.br/busca?p_p_id=br_mp_mprj_internet_busca_web_BuscaPortlet&p_p_lifecycle=0&p_p_state=normal&p_p_mode=view&_br_mp_mprj_internet_busca_web_BuscaPortlet_periodo_param=mes&_br_mp_mprj_internet_busca_web_BuscaPortlet_order_param=desc&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj&_br_mp_mprj_internet_busca_web_BuscaPortlet_exibicao_param=lista&_br_mp_mprj_internet_busca_web_BuscaPortlet_jspPage=%2Fhtml%2Fview.jsp&_br_mp_mprj_internet_busca_web_BuscaPortlet_revistas_param=todasRev"
 
     try:
         response = requests.get(url_site, timeout=30)
