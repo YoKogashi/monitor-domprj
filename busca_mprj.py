@@ -15,22 +15,23 @@ SENHA_APP = "saty tgmz rzrz yrai"
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(texto_bruto):
-    client = genai.Client(api_key=GEMINI_KEY)
+    # Forçamos a versão 'v1' para evitar o erro de 'modelo não encontrado'
+    client = genai.Client(api_key=GEMINI_KEY, http_options={'api_version': 'v1'})
     
-    # Usamos o nome fixo que o Google garante estabilidade
     modelo_operacional = "gemini-1.5-flash"
     
     prompt = f"""
-    Analise o texto e localize "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
-    Extraia as vagas listadas seguindo este formato rigoroso, separando por ponto e vírgula (;):
+    Analise o texto abaixo do Diário Oficial. 
+    Localize a seção "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
+    Extraia as vagas listadas seguindo este formato rigoroso, separado por ponto e vírgula (;):
     Item;Órgão;Critério;Origem da Vaga
     
-    Retorne APENAS os dados. Se não encontrar nada, retorne 'VAZIO'.
+    Retorne APENAS os dados encontrados. Se não houver nada, escreva VAZIO.
     Texto: {texto_bruto}
     """
     
     try:
-        # A nova biblioteca do Google usa 'models.generate_content'
+        # Chamada direta para a geração de conteúdo
         response = client.models.generate_content(
             model=modelo_operacional, 
             contents=prompt
@@ -39,16 +40,16 @@ def extrair_dados_com_ia(texto_bruto):
         texto_resposta = response.text.strip()
         
         if "VAZIO" in texto_resposta or ";" not in texto_resposta:
-            print("IA não identificou vagas no texto fornecido.")
             return []
             
-        linhas = texto_resposta.split('\n')
-        return [linha.split(';') for linha in linhas if ';' in linha]
+        # Limpa possíveis linhas vazias e organiza os dados
+        linhas = [l for l in texto_resposta.split('\n') if ';' in l]
+        return [linha.split(';') for linha in linhas]
 
     except Exception as e:
         print(f"Erro ao processar com a IA: {e}")
-        # Se a IA falhar, o robô retorna lista vazia para não travar o e-mail
         return []
+
 def formatar_excel(dados, arquivo, data_do):
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
     
