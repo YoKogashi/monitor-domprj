@@ -6,6 +6,7 @@ from google import genai
 from email.message import EmailMessage
 from datetime import datetime
 from bs4 import BeautifulSoup
+import fitz # Importante: precisa do PyMuPDF (instalado via pip install pymupdf)
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- CONFIGURAÇÕES ---
@@ -77,40 +78,38 @@ def formatar_excel(dados, arquivo, data_do):
                 cell.alignment = Alignment(wrap_text=True, vertical='center')
 
 def rodar():
-    print("Iniciando varredura com Gemini 1.5 Flash...")
+    print("Iniciando busca no PDF...")
     data_hoje = datetime.now().strftime("%d/%m/%Y")
     
-    url_site = "https://www.mprj.mp.br/busca?p_p_id=br_mp_mprj_internet_busca_web_BuscaPortlet&p_p_lifecycle=0&p_p_state=normal&p_p_mode=view&_br_mp_mprj_internet_busca_web_BuscaPortlet_jspPage=%2Fhtml%2Fview.jsp"
-    
-    try:
-        html = requests.get(url_site).text
-        soup = BeautifulSoup(html, 'html.parser')
-        texto_pagina = soup.get_text()
+    # 1. Localiza o link do PDF no site
+    html = requests.get(URL_SITE).text
+    soup = BeautifulSoup(html, 'html.parser')
+    link_pdf = ""
+    for a in soup.find_all('a', href=True):
+        if 'pdf' in a['href'].lower():
+            link_pdf = a['href']
+            if not link_pdf.startswith('http'):
+                link_pdf = "https://www.mprj.mp.br" + link_pdf
+            break
 
-        dados_extraidos = extrair_dados_com_ia(texto_pagina)
-
-        if not dados_extraidos:
-            print("Nenhuma vaga localizada no texto da página.")
-            return
-
-        nome_arquivo = "Vagas_Remocao_MPRJ.xlsx"
-        formatar_excel(dados_extraidos, nome_arquivo, data_hoje)
-
-        msg = EmailMessage()
-        msg['Subject'] = f'📊 Vagas de Remoção MPRJ - {data_hoje}'
-        msg['From'] = EMAIL_REMETENTE
-        msg['To'] = EMAIL_DESTINO
-        msg.set_content(f'Olá Renan,\n\nO robô analisou as publicações de hoje e gerou a planilha em anexo.')
-
-        with open(nome_arquivo, 'rb') as f:
-            msg.add_attachment(f.read(), maintype='application', subtype='xlsx', filename=nome_arquivo)
-
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(EMAIL_REMETENTE, SENHA_APP)
-            smtp.send_message(msg)
-        print("Sucesso!")
-    except Exception as e:
-        print(f"Erro durante a execução: {e}")
-
-if __name__ == "__main__":
-    rodar()
+    if link_pdf:
+        # 2. Baixa e lê o PDF
+        response = requests.get(link_pdf)
+        with open("diario.pdf", "wb") as f:
+            f.write(response.content)
+        
+        doc = fitz.open("diario.pdf")
+        texto_completo = ""
+        for pagina in doc:
+            texto_completo += pagina.get_text()
+        
+        # 3. Manda o texto REAL do PDF para a IA
+        dados_extraidos = extrair_dados_com_ia(texto_completo)
+        
+        if dados_extraidos:
+            nome_arquivo = "Vagas_Remocao_MPRJ.xlsx"
+            formatar_excel(dados_extraidos, nome_arquivo, data_hoje)
+            enviar_email(nome_arquivo, data_hoje)
+            print("Sucesso: PDF lido e e-mail enviado!")
+        else:
+            print("IA não encontrou as palavras-chave dentro do PDF.")
