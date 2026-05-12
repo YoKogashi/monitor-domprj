@@ -15,23 +15,31 @@ SENHA_APP = "saty tgmz rzrz yrai"
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(texto_bruto):
-    """Usa a nova biblioteca do Google GenAI para extrair os dados"""
     client = genai.Client(api_key=GEMINI_KEY)
     
+    # Tentamos o modelo mais estável e rápido atual
+    modelo_escolhido = "gemini-1.5-flash"
+    
     prompt = f"""
-    Analise o texto de um Diário Oficial abaixo e localize a seção "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
-    Analise as informações e extraia as vagas listadas seguindo este formato rigoroso, separando por ponto e vírgula (;):
-    Item;Órgão;Critério;Origem da Vaga
-    
-    Exemplo: 4.1;2ª PJ Cível;Antiguidade;Promoção de Fulano
-    
-    Retorne APENAS os dados. Se não encontrar nada, retorne 'VAZIO'.
+    Analise o texto e localize "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
+    Retorne no formato: Item;Órgão;Critério;Origem da Vaga
     Texto: {texto_bruto}
     """
     
-    response = client.models.generate_content(
-        model="gemini-1.5-flash", contents=prompt
-    )
+    try:
+        # Tenta rodar com o modelo padrão
+        response = client.models.generate_content(
+            model=modelo_escolhido, contents=prompt
+        )
+    except Exception as e:
+        print(f"Modelo {modelo_escolhido} falhou ou foi descontinuado. Tentando plano B...")
+        # PLANO B: Busca automática pelo modelo disponível mais recente
+        modelos = client.models.list()
+        # Pega o primeiro modelo que suporte geração de conteúdo e seja da família 'gemini'
+        modelo_alternativo = next(m.name for m in modelos if 'generateContent' in m.supported_methods)
+        response = client.models.generate_content(
+            model=modelo_alternativo, contents=prompt
+        )
     
     texto_resposta = response.text.strip()
     if "VAZIO" in texto_resposta or ";" not in texto_resposta:
