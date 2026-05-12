@@ -10,8 +10,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- CONFIGURAÇÕES ---
 EMAIL_DESTINO = "renan.barros@mprj.mp.br"
-EMAIL_REMETENTE = "SEU-EMAIL@gmail.com" 
-SENHA_APP = "SUA-SENHA-DE-16-LETRAS" 
+EMAIL_REMETENTE = "renan.help@gmail.com" 
+SENHA_APP = "saty tgmz rzrz yrai" 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(texto_bruto):
