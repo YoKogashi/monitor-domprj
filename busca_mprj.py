@@ -3,6 +3,7 @@ import pandas as pd
 import smtplib
 import os
 import time
+import fitz  # PyMuPDF
 from google import genai
 from email.message import EmailMessage
 from datetime import datetime
@@ -16,43 +17,63 @@ GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(caminho_pdf):
     client = genai.Client(api_key=GEMINI_KEY)
-    arquivo_gemini = None
-    status_upload = "Não realizado"
     tempo_processamento = 0
+    status_ia = "Nao iniciado"
     
     try:
-        print("Fazendo upload do PDF para o Gemini...")
-        arquivo_gemini = client.files.upload(file=caminho_pdf)
+        print("Lendo PDF localmente com PyMuPDF (Estrategia Sniper)...")
+        doc = fitz.open(caminho_pdf)
+        texto_alvo = ""
+        capturando = False
+        paginas_capturadas = 0
         
-        print("Aguardando 5 segundos para o servidor processar o arquivo...")
-        time.sleep(5)
-        
-        arquivo_gemini = client.files.get(name=arquivo_gemini.name)
-        status_upload = str(arquivo_gemini.state).split('.')[-1]
-        
-        prompt = """
-        Você é um analista de dados especialista em Diários Oficiais.
-        Abaixo está um documento PDF completo. Sua missão é localizar e extrair as vagas do "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
+        # O Robo procura a pagina exata e captura ela + 2 paginas seguintes
+        for pagina in doc:
+            texto_pag = pagina.get_text("text")
+            
+            if "CONCURSO DE REMOÇÃO" in texto_pag.upper() and "PROMOTOR" in texto_pag.upper():
+                capturando = True
+                
+            if capturando:
+                texto_alvo += texto_pag + "\n"
+                paginas_capturadas += 1
+                
+                # Pega no maximo 3 paginas para nao confundir a IA
+                if paginas_capturadas >= 3:
+                    break
+        doc.close()
 
-        ESTRUTURA DE BUSCA:
-        - Localize a seção de Concurso de Remoção para Promotor.
-        - Identifique os itens numerados, o órgão, o critério e a origem da vaga.
+        if not texto_alvo:
+            return [], "Falha: Secao nao encontrada no PDF", 0
+
+        print(f"Secao isolada! Enviando recorte de texto para o Gemini Flash...")
+        status_ia = "Texto enviado com sucesso"
+        
+        prompt = f"""
+        Você é um analista de dados especialista em Diários Oficiais.
+        Abaixo está o trecho exato onde ocorre o "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
+
+        Sua missão é extrair as vagas listadas.
+        - Identifique os itens numerados (ex: 4.1, 4.2).
+        - Identifique o Órgão (Nome da Promotoria).
+        - Identifique o Critério (Antiguidade ou Merecimento).
+        - Identifique a Origem da vaga (ex: decorrente da promoção de Fulano).
 
         SAÍDA OBRIGATÓRIA (Separada por ponto e vírgula):
         Item;Órgão;Critério;Origem da Vaga
 
-        Importante: Retorne APENAS as linhas de dados extraídas.
+        Importante: Retorne APENAS as linhas formatadas com as vagas.
         Se não houver vagas de remoção, responda apenas: VAZIO.
+
+        TEXTO PARA ANÁLISE:
+        {texto_alvo}
         """
-        
-        print(f"Analisando PDF com o modelo PRO (Status Upload: {status_upload})...")
         
         inicio_ia = time.time()
         
-        # AQUI ESTÁ A CORREÇÃO FUNDAMENTAL: Uso do modelo PRO
         response = client.models.generate_content(
-            model="gemini-1.5-pro", 
-            contents=[arquivo_gemini, prompt]
+            model="gemini-1.5-flash", 
+            contents=prompt
         )
         
         fim_ia = time.time()
@@ -61,20 +82,14 @@ def extrair_dados_com_ia(caminho_pdf):
         res = response.text.strip()
         
         if "VAZIO" in res or ";" not in res:
-            return [], status_upload, tempo_processamento
+            return [], status_ia, tempo_processamento
             
         linhas = [l.strip() for l in res.split('\n') if ';' in l]
-        return [linha.split(';') for linha in linhas], status_upload, tempo_processamento
+        return [linha.split(';') for linha in linhas], status_ia, tempo_processamento
         
     except Exception as e:
         print(f"Erro na plataforma GEMINI: {e}")
         return [], f"Erro: {str(e)}", tempo_processamento
-    finally:
-        if arquivo_gemini:
-            try:
-                client.files.delete(name=arquivo_gemini.name)
-            except:
-                pass
 
 def formatar_excel(dados, arquivo, data_do):
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
@@ -100,7 +115,7 @@ def formatar_excel(dados, arquivo, data_do):
                 cell.border = border
                 cell.alignment = Alignment(wrap_text=True, vertical='center')
 
-def enviar_email(data_do, url_pdf, localizado, status_dl, status_ul, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, arquivo_excel=None, arquivo_pdf=None):
+def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, arquivo_excel=None, arquivo_pdf=None):
     msg = EmailMessage()
     msg['From'] = EMAIL_REMETENTE
     msg['To'] = EMAIL_DESTINO
@@ -109,22 +124,25 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ul, tem_dados, 
     status_arquivo = "Localizado" if localizado else "Não localizado"
     endereco_url = url_pdf if localizado else "Não localizado"
     
+    # Texto de resultado em destaque no topo
     if tem_dados:
-        resultado_texto = f"Sucesso. {qtd_vagas} vagas de remocao extraidas e formatadas."
+        resultado_texto = f"Sucesso. {qtd_vagas} vagas de remocao extraidas e informadas no arquivo em anexo."
     else:
-        resultado_texto = "Dados de remocao nao encontrados no documento."
+        resultado_texto = "Dados de remocao nao encontrados."
 
+    # Nova formatação exata conforme solicitado
     corpo = (
+        f"{resultado_texto}\n\n"
+        f"--------------------------------------------\n"
         f"Relatorio de Execucao - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+        f"--------------------------------------------\n\n"
         f"Pesquisa realizada para o Diario Oficial de {data_do}.\n\n"
         f"--- METRICAS DO SISTEMA ---\n"
         f"Arquivo DOe: {status_arquivo}\n"
         f"Endereco URL: {endereco_url}\n"
         f"Status do Download: {status_dl} (Tamanho: {tamanho_kb} KB)\n"
-        f"Status de Upload (Gemini): {status_ul}\n"
-        f"Tempo de Leitura da IA: {tempo_ia} segundos\n\n"
-        f"--- RESULTADO FINAL ---\n"
-        f"{resultado_texto}"
+        f"Comunicacao com IA: {status_ia}\n"
+        f"Tempo de Leitura da IA: {tempo_ia} segundos\n"
     )
     msg.set_content(corpo)
 
@@ -139,7 +157,7 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ul, tem_dados, 
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(EMAIL_REMETENTE, SENHA_APP)
             smtp.send_message(msg)
-        print("E-mail enviado com sucesso.")
+        print("E-mail formatado enviado com sucesso.")
     except Exception as e:
         print(f"Erro no envio do e-mail: {e}")
 
@@ -150,7 +168,7 @@ def rodar():
     
     localizado = False
     status_download = "Nao iniciado"
-    status_upload = "Nao iniciado"
+    status_ia = "Nao iniciado"
     tem_dados = False
     tamanho_pdf_kb = 0
     
@@ -168,7 +186,8 @@ def rodar():
 
             tamanho_pdf_kb = round(os.path.getsize(pdf_local) / 1024, 2)
 
-            dados, status_upload, tempo_processamento = extrair_dados_com_ia(pdf_local)
+            # Usando a estratégia Sniper para evitar erro 404
+            dados, status_ia, tempo_processamento = extrair_dados_com_ia(pdf_local)
 
             if dados:
                 tem_dados = True
@@ -176,21 +195,21 @@ def rodar():
                 excel_local = "Vagas_Encontradas.xlsx"
                 formatar_excel(dados, excel_local, data_exibicao)
                 
-                enviar_email(data_exibicao, url_pdf, localizado, status_download, status_upload, tem_dados, 
+                enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados, 
                              qtd_vagas=qtd_vagas, tempo_ia=tempo_processamento, tamanho_kb=tamanho_pdf_kb, 
                              arquivo_excel=excel_local, arquivo_pdf=pdf_local)
             else:
-                enviar_email(data_exibicao, url_pdf, localizado, status_download, status_upload, tem_dados, 
+                enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados, 
                              tempo_ia=tempo_processamento, tamanho_kb=tamanho_pdf_kb, arquivo_pdf=pdf_local)
         
         else:
             status_download = f"Mal sucedido (Erro {response.status_code})"
-            enviar_email(data_exibicao, url_pdf, localizado, status_download, status_upload, tem_dados)
+            enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados)
             
     except Exception as e:
         status_download = f"Mal sucedido ({str(e)})"
         print(f"Erro critico: {e}")
-        enviar_email(data_exibicao, url_pdf, localizado, status_download, status_upload, tem_dados)
+        enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados)
 
 if __name__ == "__main__":
     rodar()
