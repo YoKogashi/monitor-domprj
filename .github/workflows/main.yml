@@ -2,21 +2,23 @@ name: Busca Diaria MPRJ
 
 on:
   schedule:
-    # Isso faz o robô rodar todos os dias às 09:00 da manhã (horário UTC)
     - cron: '0 12 * * *' 
-  workflow_dispatch: # Permite que você rode manualmente se quiser clicar num botão
+  workflow_dispatch: 
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: baixar codigo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4  # Atualizado para v4
       - name: configurar python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5 # Atualizado para v5
         with:
           python-version: '3.9'
       - name: instalar bibliotecas
-        run: pip install requests beautifulsoup4 pandas openpyxl google-generativeai
+        run: |
+          pip install requests beautifulsoup4 pandas openpyxl google-generativeai
       - name: rodar busca
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python busca_mprj.py
