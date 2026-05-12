@@ -2,6 +2,7 @@ name: Busca Diaria MPRJ
 
 on:
   schedule:
+    # 13:00 UTC = 10:00 AM Brasília
     - cron: '0 13 * * *' 
   workflow_dispatch: 
 
@@ -14,10 +15,9 @@ jobs:
       - name: configurar python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # Atualizado para versão estável
+          python-version: '3.10'
       - name: instalar bibliotecas
-        run: |
-          run: pip install requests beautifulsoup4 pandas openpyxl google-genai PyMuPDF
+        run: pip install requests beautifulsoup4 pandas openpyxl google-genai PyMuPDF
       - name: rodar busca
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
