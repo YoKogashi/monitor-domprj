@@ -2,11 +2,9 @@ import requests
 import pandas as pd
 import smtplib
 import os
-import fitz  # PyMuPDF
-import re    # Biblioteca para expressões regulares (o nosso "bisturi")
 from google import genai
 from email.message import EmailMessage
-from datetime import datetime, timedelta
+from datetime import datetime
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- CONFIGURAÇÕES ---
@@ -15,40 +13,45 @@ EMAIL_REMETENTE = "renan.help@gmail.com"
 SENHA_APP = "saty tgmz rzrz yrai" 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
-def extrair_dados_com_ia(texto_recortado):
+def extrair_dados_com_ia(caminho_pdf):
     """
-    Agora a IA recebe apenas o 'filé mignon' do texto, 
-    já recortado e focado apenas na remoção.
+    Faz o upload do PDF diretamente para a API do Gemini.
+    A IA lê o documento nativamente, preservando o layout visual.
     """
+    client = genai.Client(api_key=GEMINI_KEY)
+    arquivo_gemini = None
+    
     try:
-        client = genai.Client(api_key=GEMINI_KEY)
+        print("Fazendo upload do PDF para o Gemini...")
+        # 1. Envia o arquivo físico para a API
+        arquivo_gemini = client.files.upload(file=caminho_pdf)
         
-        prompt = f"""
-        Você é um assistente especialista em estruturação de dados.
-        Abaixo está um trecho de um Diário Oficial que trata de vagas de REMOÇÃO.
+        prompt = """
+        Você é um analista de dados especialista em Diários Oficiais.
+        Abaixo está um documento PDF completo. Sua missão é localizar e extrair as vagas do "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
 
-        SUA TAREFA:
-        Extraia a lista de vagas. Cada item de vaga costuma seguir este padrão:
-        [Número do Item] - [Nome da Promotoria] - [Origem da vaga (ex: promoção, vacância)] - [Critério (Antiguidade/Merecimento)]
+        ESTRUTURA DE BUSCA:
+        - Navegue pelo documento até encontrar a seção que fala sobre Concurso de Remoção para Promotor.
+        - Identifique os itens numerados que descrevam a abertura de vaga em uma Promotoria de Justiça.
+        - Identifique a origem (ex: vaga decorrente da promoção de...) e o critério (Antiguidade/Merecimento).
 
-        Crie uma tabela com exatidão usando PONTO E VÍRGULA (;) como separador.
-
-        SAÍDA OBRIGATÓRIA E ÚNICA:
+        SAÍDA OBRIGATÓRIA (Separada por ponto e vírgula):
         Item;Órgão;Critério;Origem da Vaga
 
         Exemplo de resposta esperada:
-        4.1;2ª Promotoria Cível;Antiguidade;Promoção de Sérgio Bumaschny
+        4.1;2ª Promotoria Cível da Capital;Antiguidade;Promoção de Sérgio Bumaschny
         4.2;1ª Promotoria Criminal;Merecimento;Remoção de Marcos
 
-        IMPORTANTE: 
-        - Responda APENAS com os dados formatados, linha por linha.
-        - Não invente nada. Se não houver itens descrevendo Promotorias e critérios, responda: VAZIO.
-
-        TEXTO PARA EXTRAÇÃO:
-        {texto_recortado}
+        Importante: Retorne APENAS as linhas de dados extraídas, sem cabeçalhos ou introduções.
+        Se não houver vagas de remoção no documento, responda apenas: VAZIO.
         """
         
-        response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+        print("Analisando o PDF nativamente...")
+        # 2. Passa o arquivo e o prompt para o modelo Flash
+        response = client.models.generate_content(
+            model="gemini-1.5-flash", 
+            contents=[arquivo_gemini, prompt]
+        )
         res = response.text.strip()
         
         if "VAZIO" in res or ";" not in res:
@@ -56,9 +59,18 @@ def extrair_dados_com_ia(texto_recortado):
             
         linhas = [l.strip() for l in res.split('\n') if ';' in l]
         return [linha.split(';') for linha in linhas]
+        
     except Exception as e:
         print(f"Erro na IA: {e}")
         return []
+    finally:
+        # 3. Limpeza: Deleta o arquivo dos servidores do Google após a análise
+        if arquivo_gemini:
+            try:
+                client.files.delete(name=arquivo_gemini.name)
+                print("Arquivo temporário apagado dos servidores do Gemini.")
+            except:
+                pass
 
 def formatar_excel(dados, arquivo, data_do):
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
@@ -136,47 +148,13 @@ def rodar():
             enviar_email(data_exibicao, url_pdf, False, False)
             return
 
+        # Salva o PDF localmente
         pdf_local = "temp_diario.pdf"
         with open(pdf_local, "wb") as f:
             f.write(response.content)
 
-        print("Extraindo texto do PDF...")
-        doc = fitz.open(pdf_local)
-        texto_completo = ""
-        for pagina in doc:
-            texto_completo += pagina.get_text("text") + "\n"
-        doc.close()
-
-        # O BISTURI: Usando Expressões Regulares para encontrar a seção exata
-        print("Procurando seção de Concurso de Remoção...")
-        
-        # Procura a frase exata (ignorando quebras de linha estranhas que o PDF possa ter)
-        padrao_busca = re.compile(r"CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA(.*?)(\n[A-Z0-9.\s]+:|\n\n\n|\Z)", re.DOTALL | re.IGNORECASE)
-        match = padrao_busca.search(texto_completo)
-
-        texto_para_ia = ""
-        if match:
-            # Pega o texto encontrado a partir da frase chave
-            texto_encontrado = match.group(0)
-            
-            # Limita a 5000 caracteres (suficiente para as vagas, mas elimina o resto do diário)
-            texto_para_ia = texto_encontrado[:5000]
-            print(f"Seção encontrada! Recortei {len(texto_para_ia)} caracteres.")
-        else:
-            print("Aviso: Expressão regular falhou. Tentando busca manual por palavras...")
-            # Plano B: Busca simples de posição
-            indice_inicio = texto_completo.upper().find("CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA")
-            if indice_inicio != -1:
-                texto_para_ia = texto_completo[indice_inicio : indice_inicio + 5000]
-                print(f"Seção encontrada manualmente! Recortei {len(texto_para_ia)} caracteres.")
-
-        if not texto_para_ia:
-            print("Não encontrei a seção de remoção de promotores no texto.")
-            enviar_email(data_exibicao, url_pdf, True, False, arquivo_pdf=pdf_local)
-            return
-
-        print("Enviando recorte do texto para o Gemini...")
-        dados = extrair_dados_com_ia(texto_para_ia)
+        # Envia o CAMINHO DO ARQUIVO para a IA, não o texto.
+        dados = extrair_dados_com_ia(pdf_local)
 
         if dados:
             print(f"Sucesso! A IA extraiu {len(dados)} vagas.")
@@ -184,7 +162,7 @@ def rodar():
             formatar_excel(dados, excel_local, data_exibicao)
             enviar_email(data_exibicao, url_pdf, True, True, excel_local, pdf_local)
         else:
-            print("A IA recebeu o recorte correto, mas retornou vazio (falha de formatação).")
+            print("A IA analisou o PDF, mas retornou vazio.")
             enviar_email(data_exibicao, url_pdf, True, False, arquivo_pdf=pdf_local)
             
     except Exception as e:
