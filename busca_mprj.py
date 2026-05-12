@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 import smtplib
 import os
-import time  # NOVA BIBLIOTECA PARA CRONOMETRAR A IA
+import time
 from google import genai
 from email.message import EmailMessage
 from datetime import datetime
@@ -23,6 +23,13 @@ def extrair_dados_com_ia(caminho_pdf):
     try:
         print("Fazendo upload do PDF para o Gemini...")
         arquivo_gemini = client.files.upload(file=caminho_pdf)
+        
+        # Pausa de 5 segundos para garantir que o Google processou o PDF
+        print("Aguardando processamento do arquivo no servidor...")
+        time.sleep(5)
+        
+        # Puxa o status atualizado do arquivo
+        arquivo_gemini = client.files.get(name=arquivo_gemini.name)
         status_upload = str(arquivo_gemini.state).split('.')[-1]
         
         prompt = """
@@ -40,17 +47,16 @@ def extrair_dados_com_ia(caminho_pdf):
         Se não houver vagas de remoção, responda apenas: VAZIO.
         """
         
-        print(f"Analisando PDF (Status Upload: {status_upload})...")
+        print(f"Analisando PDF com o modelo PRO (Status Upload: {status_upload})...")
         
-        # Inicia o cronômetro
         inicio_ia = time.time()
         
+        # --- SOLUÇÃO: Mudança para o modelo PRO, focado em leitura profunda ---
         response = client.models.generate_content(
-            model="gemini-1.5-flash", 
+            model="gemini-1.5-pro", 
             contents=[arquivo_gemini, prompt]
         )
         
-        # Para o cronômetro
         fim_ia = time.time()
         tempo_processamento = round(fim_ia - inicio_ia, 2)
         
@@ -66,6 +72,7 @@ def extrair_dados_com_ia(caminho_pdf):
         print(f"Erro na plataforma GEMINI: {e}")
         return [], f"Erro: {str(e)}", tempo_processamento
     finally:
+        # Limpeza do servidor
         if arquivo_gemini:
             try:
                 client.files.delete(name=arquivo_gemini.name)
@@ -137,58 +144,4 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ul, tem_dados, 
             smtp.send_message(msg)
         print("Relatório de monitoramento enviado.")
     except Exception as e:
-        print(f"Erro no envio do e-mail: {e}")
-
-def rodar():
-    data_alvo = "08.05.2026"
-    data_exibicao = "08/05/2026"
-    url_pdf = f"https://www.mprj.mp.br/documents/20184/8887328/{data_alvo}.pdf"
-    
-    localizado = False
-    status_download = "Não iniciado"
-    status_upload = "Não iniciado"
-    tem_dados = False
-    tamanho_pdf_kb = 0
-    
-    try:
-        print(f"Buscando PDF: {url_pdf}")
-        response = requests.get(url_pdf, timeout=30)
-        
-        if response.status_code == 200:
-            localizado = True
-            status_download = "Bem sucedido"
-            
-            pdf_local = "temp_diario.pdf"
-            with open(pdf_local, "wb") as f:
-                f.write(response.content)
-
-            # Calcula o tamanho do PDF em KB para o relatório
-            tamanho_pdf_kb = round(os.path.getsize(pdf_local) / 1024, 2)
-
-            # Chama a IA e captura: Dados, Status do Upload e Tempo que a IA demorou
-            dados, status_upload, tempo_processamento = extrair_dados_com_ia(pdf_local)
-
-            if dados:
-                tem_dados = True
-                qtd_vagas = len(dados)
-                excel_local = "Vagas_Encontradas.xlsx"
-                formatar_excel(dados, excel_local, data_exibicao)
-                
-                enviar_email(data_exibicao, url_pdf, localizado, status_download, status_upload, tem_dados, 
-                             qtd_vagas=qtd_vagas, tempo_ia=tempo_processamento, tamanho_kb=tamanho_pdf_kb, 
-                             arquivo_excel=excel_local, arquivo_pdf=pdf_local)
-            else:
-                enviar_email(data_exibicao, url_pdf, localizado, status_download, status_upload, tem_dados, 
-                             tempo_ia=tempo_processamento, tamanho_kb=tamanho_pdf_kb, arquivo_pdf=pdf_local)
-        
-        else:
-            status_download = f"Mal sucedido (Erro {response.status_code})"
-            enviar_email(data_exibicao, url_pdf, localizado, status_download, status_upload, tem_dados)
-            
-    except Exception as e:
-        status_download = f"Mal sucedido ({str(e)})"
-        print(f"Erro crítico: {e}")
-        enviar_email(data_exibicao, url_pdf, localizado, status_download, status_upload, tem_dados)
-
-if __name__ == "__main__":
-    rodar()
+        print(f"Erro no envio do e-
