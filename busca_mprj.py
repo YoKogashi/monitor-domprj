@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 import smtplib
 import os
-import google.generativeai as genai
+from google import genai
 from email.message import EmailMessage
 from datetime import datetime
 from bs4 import BeautifulSoup
@@ -10,45 +10,48 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- CONFIGURAÇÕES ---
 EMAIL_DESTINO = "renan.barros@mprj.mp.br"
-EMAIL_REMETENTE = "renan.help@gmail.com" # <--- MUDE AQUI
-SENHA_APP = "saty tgmz rzrz yrai"    # <--- COLE AQUI A SENHA DO GMAIL
-GEMINI_KEY = os.getenv("GEMINI_API_KEY") # Pega a chave que guardou no GitHub
+EMAIL_REMETENTE = "SEU-EMAIL@gmail.com" 
+SENHA_APP = "SUA-SENHA-DE-16-LETRAS" 
+GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 def extrair_dados_com_ia(texto_bruto):
-    """Instrui a IA a ler o texto e retornar apenas os dados estruturados"""
-    genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel('gemini-pro')
+    """Usa a nova biblioteca do Google GenAI para extrair os dados"""
+    client = genai.Client(api_key=GEMINI_KEY)
     
     prompt = f"""
     Analise o texto de um Diário Oficial abaixo e localize a seção "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
-    Extraia as vagas listadas seguindo este formato rigoroso, separando por ponto e vírgula (;):
+    Analise as informações e extraia as vagas listadas seguindo este formato rigoroso, separando por ponto e vírgula (;):
     Item;Órgão;Critério;Origem da Vaga
     
-    Se houver mais de uma vaga, coloque uma em cada linha. 
-    Não escreva mais nada além dos dados.
+    Exemplo: 4.1;2ª PJ Cível;Antiguidade;Promoção de Fulano
+    
+    Retorne APENAS os dados. Se não encontrar nada, retorne 'VAZIO'.
     Texto: {texto_bruto}
     """
     
-    response = model.generate_content(prompt)
-    linhas = response.text.strip().split('\n')
-    # Transforma as linhas da IA em uma lista de listas para o Pandas
+    response = client.models.generate_content(
+        model="gemini-1.5-flash", contents=prompt
+    )
+    
+    texto_resposta = response.text.strip()
+    if "VAZIO" in texto_resposta or ";" not in texto_resposta:
+        return []
+        
+    linhas = texto_resposta.split('\n')
     return [linha.split(';') for linha in linhas if ';' in linha]
 
 def formatar_excel(dados, arquivo, data_do):
-    """Cria o Excel com a formatação visual profissional"""
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
     
     with pd.ExcelWriter(arquivo, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, startrow=2, sheet_name='Vagas')
         ws = writer.sheets['Vagas']
         
-        # Título
         ws.merge_cells('A1:D1')
         ws['A1'] = f"Resultados encontrados no DOeMPRJ de {data_do}"
         ws['A1'].font = Font(size=14, bold=True, color="2F5597")
         ws['A1'].alignment = Alignment(horizontal='center')
 
-        # Cabeçalho
         header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True)
         for cell in ws[3]:
@@ -56,7 +59,6 @@ def formatar_excel(dados, arquivo, data_do):
             cell.font = header_font
             cell.alignment = Alignment(horizontal='center')
 
-        # Ajustes Visuais
         ws.column_dimensions['A'].width = 8
         ws.column_dimensions['B'].width = 45
         ws.column_dimensions['C'].width = 15
@@ -71,42 +73,40 @@ def formatar_excel(dados, arquivo, data_do):
                 cell.alignment = Alignment(wrap_text=True, vertical='center')
 
 def rodar():
-    print("Iniciando varredura dinâmica...")
+    print("Iniciando varredura com Gemini 1.5 Flash...")
     data_hoje = datetime.now().strftime("%d/%m/%Y")
     
-    # 1. ACESSA O SITE E PEGA O TEXTO (Simulação de extração de texto do PDF)
-    # Em uma implementação completa, usaríamos uma lib como PyMuPDF para ler o PDF do link
-    # Por agora, o robô busca o conteúdo textual da página de busca que você enviou
-    url_site = "https://www.mprj.mp.br/busca..." # URL completa aqui
-    html = requests.get(url_site).text
-    soup = BeautifulSoup(html, 'html.parser')
-    texto_pagina = soup.get_text()
+    url_site = "https://www.mprj.mp.br/busca?p_p_id=br_mp_mprj_internet_busca_web_BuscaPortlet&p_p_lifecycle=0&p_p_state=normal&p_p_mode=view&p_p_col_id=column-1&p_p_col_count=1&_br_mp_mprj_internet_busca_web_BuscaPortlet_jspPage=%2Fhtml%2Fview.jsp&_br_mp_mprj_internet_busca_web_BuscaPortlet_exibicao_param=card&_br_mp_mprj_internet_busca_web_BuscaPortlet_filtro_param=doerj&_br_mp_mprj_internet_busca_web_BuscaPortlet_delta=15"
+    
+    try:
+        html = requests.get(url_site).text
+        soup = BeautifulSoup(html, 'html.parser')
+        texto_pagina = soup.get_text()
 
-    # 2. IA PROCESSA O TEXTO
-    dados_extraidos = extrair_dados_com_ia(texto_pagina)
+        dados_extraidos = extrair_dados_com_ia(texto_pagina)
 
-    if not dados_extraidos:
-        print("Nenhuma vaga de remoção encontrada hoje.")
-        return
+        if not dados_extraidos:
+            print("Nenhuma vaga localizada no texto da página.")
+            return
 
-    # 3. GERA E FORMATA O EXCEL
-    nome_arquivo = "Vagas_Remocao_MPRJ.xlsx"
-    formatar_excel(dados_extraidos, nome_arquivo, data_hoje)
+        nome_arquivo = "Vagas_Remocao_MPRJ.xlsx"
+        formatar_excel(dados_extraidos, nome_arquivo, data_hoje)
 
-    # 4. ENVIA E-MAIL
-    msg = EmailMessage()
-    msg['Subject'] = f'📊 Vagas de Remoção MPRJ - {data_hoje}'
-    msg['From'] = EMAIL_REMETENTE
-    msg['To'] = EMAIL_DESTINO
-    msg.set_content(f'Olá Renan,\n\nO robô analisou o DOeMPRJ de hoje e extraiu as vagas em anexo.')
+        msg = EmailMessage()
+        msg['Subject'] = f'📊 Vagas de Remoção MPRJ - {data_hoje}'
+        msg['From'] = EMAIL_REMETENTE
+        msg['To'] = EMAIL_DESTINO
+        msg.set_content(f'Olá Renan,\n\nO robô analisou as publicações de hoje e gerou a planilha em anexo.')
 
-    with open(nome_arquivo, 'rb') as f:
-        msg.add_attachment(f.read(), maintype='application', subtype='xlsx', filename=nome_arquivo)
+        with open(nome_arquivo, 'rb') as f:
+            msg.add_attachment(f.read(), maintype='application', subtype='xlsx', filename=nome_arquivo)
 
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-        smtp.login(EMAIL_REMETENTE, SENHA_APP)
-        smtp.send_message(msg)
-    print("Relatório dinâmico enviado!")
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(EMAIL_REMETENTE, SENHA_APP)
+            smtp.send_message(msg)
+        print("Sucesso!")
+    except Exception as e:
+        print(f"Erro durante a execução: {e}")
 
 if __name__ == "__main__":
     rodar()
