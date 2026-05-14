@@ -2,9 +2,9 @@ name: Busca Diaria MPRJ
 
 on:
   schedule:
-    # 10:17 UTC = 07:17 AM no Horário de Brasília
+    # 09:17 UTC = 06:17 AM no Horário de Brasília
     # O minuto 17 foge do congestionamento global do GitHub
-    - cron: '17 10 * * *' 
+    - cron: '17 9 * * *' 
   workflow_dispatch: 
 
 jobs:
