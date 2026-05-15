@@ -19,39 +19,44 @@ def extrair_dados_com_ia(caminho_pdf):
     status_ia = "Nao iniciado"
     
     try:
-        print("Lendo PDF localmente com PyMuPDF (Estrategia Sniper)...")
+        print("Lendo PDF localmente com PyMuPDF (Estrategia Sniper V3 - Busca Total)...")
         doc = fitz.open(caminho_pdf)
-        texto_alvo = ""
-        capturando = False
-        paginas_capturadas = 0
+        paginas_alvo = set()
         
-        # O Robo procura a pagina exata e captura ela + 2 paginas seguintes
-        for pagina in doc:
+        # O Robo varre TODO o documento sem parar, guardando todas as ocorrencias
+        for i, pagina in enumerate(doc):
             texto_pag = pagina.get_text("text")
             
             if "CONCURSO DE REMOÇÃO" in texto_pag.upper() and "PROMOTOR" in texto_pag.upper():
-                capturando = True
-                
-            if capturando:
-                texto_alvo += texto_pag + "\n"
-                paginas_capturadas += 1
-                
-                # Pega no maximo 3 paginas para nao confundir a IA
-                if paginas_capturadas >= 3:
-                    break
+                paginas_alvo.add(i)
+                # Salva tambem a pagina seguinte por precaucao (caso a lista quebre de pagina)
+                if i + 1 < len(doc):
+                    paginas_alvo.add(i + 1)
+                    
         doc.close()
 
-        if not texto_alvo:
-            return [], "Falha: Secao nao encontrada no PDF", 0
+        # Ordena as paginas encontradas e remove duplicadas
+        paginas_alvo = sorted(list(paginas_alvo))
 
-        print(f"Secao isolada! Comunicando DIRETAMENTE com a API do Gemini...")
+        if not paginas_alvo:
+            return [], "Falha: Secao nao encontrada em nenhuma pagina do PDF", 0
+
+        # Monta o texto alvo unindo todas as paginas suspeitas
+        texto_alvo = ""
+        doc = fitz.open(caminho_pdf)
+        for i in paginas_alvo:
+            texto_alvo += doc[i].get_text("text") + "\n"
+        doc.close()
+
+        print(f"Busca total concluida! {len(paginas_alvo)} paginas capturadas. Enviando para a IA...")
         
         prompt = f"""
         Você é um analista de dados especialista em Diários Oficiais.
-        Abaixo está o trecho exato onde ocorre o "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA".
+        Abaixo estão os trechos do documento onde o termo "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA" apareceu.
+        Ignore citações de índices ou sumários. Foque apenas na lista real de vagas.
 
         Sua missão é extrair as vagas listadas.
-        - Identifique os itens numerados (ex: 4.1, 4.2).
+        - Identifique os itens numerados (podem começar com 1, 2, 3.1, 4.1, etc).
         - Identifique o Órgão (Nome da Promotoria).
         - Identifique o Critério (Antiguidade ou Merecimento).
         - Identifique a Origem da vaga (ex: decorrente da promoção de Fulano).
@@ -72,7 +77,6 @@ def extrair_dados_com_ia(caminho_pdf):
             "generationConfig": {"temperature": 0.1}
         }
         
-        # O modelo testado e vitorioso
         url_api = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
         
         inicio_ia = time.time()
@@ -135,7 +139,7 @@ def formatar_excel(dados, arquivo, data_do):
         # --- LARGURA AUTOMÁTICA DAS COLUNAS AJUSTADA AO CONTEÚDO ---
         for col in ws.iter_cols(min_row=3, max_row=len(dados)+3, min_col=1, max_col=4):
             max_length = 0
-            col_letter = col[0].column_letter # A, B, C ou D
+            col_letter = col[0].column_letter
             
             for cell in col:
                 if cell.value:
@@ -159,7 +163,6 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
     else:
         resultado_texto = "Dados de remocao nao encontrados."
 
-    # Formatação exata do corpo do e-mail
     corpo = (
         f"Pesquisa realizada para o Diario Oficial de {data_do}.\n"
         f"{resultado_texto}\n\n"
@@ -192,9 +195,13 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
 def rodar():
     # --- DATA DINÂMICA: SEMPRE O DIA ANTERIOR ---
     ontem = datetime.now() - timedelta(days=1)
-    data_alvo = ontem.strftime("%d.%m.%Y")       # Formato para URL: DD.MM.YYYY
-    data_exibicao = ontem.strftime("%d/%m/%Y")   # Formato para o E-mail: DD/MM/YYYY
+    data_alvo = ontem.strftime("%d.%m.%Y")       
+    data_exibicao = ontem.strftime("%d/%m/%Y")   
     
+    # Para testar com a data do arquivo que me mandou (14/05/2026), descomente as linhas abaixo:
+    # data_alvo = "14.05.2026"
+    # data_exibicao = "14/05/2026"
+
     url_pdf = f"https://www.mprj.mp.br/documents/20184/8887328/{data_alvo}.pdf"
     
     localizado = False
