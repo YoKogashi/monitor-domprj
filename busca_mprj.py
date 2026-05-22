@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- CONFIGURAÇÕES ---
-EMAIL_DESTINO = "renan.barros@mprj.mp.br"
+# Lista de e-mails que receberão o relatório
+EMAILS_DESTINO = ["renan.barros@mprj.mp.br", "sandro.silva@mprj.mp.br"]
 EMAIL_REMETENTE = "renan.help@gmail.com" 
 SENHA_APP = "saty tgmz rzrz yrai" 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
@@ -23,25 +24,21 @@ def extrair_dados_com_ia(caminho_pdf):
         doc = fitz.open(caminho_pdf)
         paginas_alvo = set()
         
-        # O Robo varre TODO o documento sem parar, guardando todas as ocorrencias
         for i, pagina in enumerate(doc):
             texto_pag = pagina.get_text("text")
             
             if "CONCURSO DE REMOÇÃO" in texto_pag.upper() and "PROMOTOR" in texto_pag.upper():
                 paginas_alvo.add(i)
-                # Salva tambem a pagina seguinte por precaucao (caso a lista quebre de pagina)
                 if i + 1 < len(doc):
                     paginas_alvo.add(i + 1)
                     
         doc.close()
 
-        # Ordena as paginas encontradas e remove duplicadas
         paginas_alvo = sorted(list(paginas_alvo))
 
         if not paginas_alvo:
             return [], "Falha: Secao nao encontrada em nenhuma pagina do PDF", 0
 
-        # Monta o texto alvo unindo todas as paginas suspeitas
         texto_alvo = ""
         doc = fitz.open(caminho_pdf)
         for i in paginas_alvo:
@@ -112,31 +109,26 @@ def formatar_excel(dados, arquivo, data_do):
         df.to_excel(writer, index=False, startrow=2, sheet_name='Vagas')
         ws = writer.sheets['Vagas']
         
-        # --- TÍTULO ---
         ws.merge_cells('A1:D1')
         ws['A1'] = f"Resultados encontrados no DOeMPRJ de {data_do}"
         ws['A1'].font = Font(size=14, bold=True, color="2F5597")
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
         
-        # --- CABEÇALHO ---
         header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
         for cell in ws[3]:
             cell.fill = header_fill
             cell.font = Font(color="FFFFFF", bold=True)
             cell.alignment = Alignment(horizontal='center', vertical='center')
         
-        # --- BORDAS E ALINHAMENTO ---
         border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
         for row in ws.iter_rows(min_row=3, max_row=len(dados)+3):
             for cell in row:
                 cell.border = border
                 cell.alignment = Alignment(wrap_text=True, vertical='center')
 
-        # --- AJUSTE DE ALTURA DAS LINHAS (25 pts) ---
         for row_idx in range(1, len(dados) + 4):
             ws.row_dimensions[row_idx].height = 25
             
-        # --- LARGURA AUTOMÁTICA DAS COLUNAS AJUSTADA AO CONTEÚDO ---
         for col in ws.iter_cols(min_row=3, max_row=len(dados)+3, min_col=1, max_col=4):
             max_length = 0
             col_letter = col[0].column_letter
@@ -152,7 +144,8 @@ def formatar_excel(dados, arquivo, data_do):
 def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, arquivo_excel=None, arquivo_pdf=None):
     msg = EmailMessage()
     msg['From'] = EMAIL_REMETENTE
-    msg['To'] = EMAIL_DESTINO
+    # Une os destinatários da lista separados por vírgula
+    msg['To'] = ", ".join(EMAILS_DESTINO)
     msg['Subject'] = f"Monitoramento DOeMPRJ - {data_do}"
     
     status_arquivo = "Localizado" if localizado else "Nao localizado"
@@ -188,20 +181,15 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(EMAIL_REMETENTE, SENHA_APP)
             smtp.send_message(msg)
-        print("E-mail formatado enviado com sucesso.")
+        print("E-mail formatado enviado com sucesso para todos os destinatarios.")
     except Exception as e:
         print(f"Erro no envio do e-mail: {e}")
 
 def rodar():
-    # --- DATA DINÂMICA: SEMPRE O DIA ANTERIOR ---
     ontem = datetime.now() - timedelta(days=1)
     data_alvo = ontem.strftime("%d.%m.%Y")       
     data_exibicao = ontem.strftime("%d/%m/%Y")   
     
-    # Para testar com a data do arquivo que me mandou (14/05/2026), descomente as linhas abaixo:
-    # data_alvo = "14.05.2026"
-    # data_exibicao = "14/05/2026"
-
     url_pdf = f"https://www.mprj.mp.br/documents/20184/8887328/{data_alvo}.pdf"
     
     localizado = False
