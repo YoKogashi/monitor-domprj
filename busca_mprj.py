@@ -18,9 +18,11 @@ GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 def extrair_dados_com_ia(caminho_pdf):
     tempo_processamento = 0
     status_ia = "Nao iniciado"
+    sessao_info = "Nao identificada"
+    validade_info = "Nao identificada"
     
     try:
-        print("Lendo PDF localmente com PyMuPDF (Estrategia Sniper V3 - Busca Total)...")
+        print("Lendo PDF localmente com PyMuPDF (Estrategia Sniper V4 - Contexto Expandido)...")
         doc = fitz.open(caminho_pdf)
         paginas_alvo = set()
         
@@ -28,6 +30,9 @@ def extrair_dados_com_ia(caminho_pdf):
             texto_pag = pagina.get_text("text")
             
             if "CONCURSO DE REMOÇÃO" in texto_pag.upper() and "PROMOTOR" in texto_pag.upper():
+                # Captura a página atual, 1 à frente e 2 para trás (Garante captura do cabeçalho da Ata)
+                paginas_alvo.add(max(0, i - 2)) 
+                paginas_alvo.add(max(0, i - 1))
                 paginas_alvo.add(i)
                 if i + 1 < len(doc):
                     paginas_alvo.add(i + 1)
@@ -37,7 +42,7 @@ def extrair_dados_com_ia(caminho_pdf):
         paginas_alvo = sorted(list(paginas_alvo))
 
         if not paginas_alvo:
-            return [], "Falha: Secao nao encontrada em nenhuma pagina do PDF", 0
+            return [], "", "", "Falha: Secao nao encontrada em nenhuma pagina do PDF", 0
 
         texto_alvo = ""
         doc = fitz.open(caminho_pdf)
@@ -48,21 +53,26 @@ def extrair_dados_com_ia(caminho_pdf):
         print(f"Busca total concluida! {len(paginas_alvo)} paginas capturadas. Enviando para a IA...")
         
         prompt = f"""
-        Você é um analista de dados especialista em Diários Oficiais.
-        Abaixo estão os trechos do documento onde o termo "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA" apareceu.
-        Ignore citações de índices ou sumários. Foque apenas na lista real de vagas.
+        Você é um analista de dados especialista em Diários Oficiais do Ministério Público.
+        Abaixo estão trechos do documento contendo a publicação de vagas para "CONCURSO DE REMOÇÃO PARA PROMOTOR DE JUSTIÇA", juntamente com as páginas anteriores para contexto (como Atas do Conselho Superior).
 
-        Sua missão é extrair as vagas listadas.
-        - Identifique os itens numerados (podem começar com 1, 2, 3.1, 4.1, etc).
-        - Identifique o Órgão (Nome da Promotoria).
-        - Identifique o Critério (Antiguidade ou Merecimento).
-        - Identifique a Origem da vaga (ex: decorrente da promoção de Fulano).
+        Sua missão é extrair informações gerais e a lista de vagas.
 
-        SAÍDA OBRIGATÓRIA (Separada por ponto e vírgula):
+        1. IDENTIFICAÇÃO DA SESSÃO: Procure pelo cabeçalho ou descrição da Ata do Conselho Superior e identifique qual foi a sessão (ex: 1ª, 2ª, 54ª Sessão Ordinária/Extraordinária) e a data de realização da sessão.
+        2. VALIDADE: Procure pela data de validade da remoção (ex: "com validade a contar de DD/MM/AAAA").
+        3. LISTA DE VAGAS:
+           - Identifique os itens numerados (podem começar com 1, 2, 3.1, 4.1, etc).
+           - Identifique o Órgão (Nome da Promotoria).
+           - Identifique o Critério (Antiguidade ou Merecimento).
+           - Identifique a Origem da vaga (ex: decorrente da promoção de Fulano).
+
+        SAÍDA OBRIGATÓRIA (Siga estritamente este formato de blocos):
+        SESSAO: [Número e Data da Sessão, ou "Não identificada"]
+        VALIDADE: [Data de validade, ou "Não identificada"]
+        VAGAS:
         Item;Órgão;Critério;Origem da Vaga
 
-        Importante: Retorne APENAS as linhas formatadas com as vagas.
-        Se não houver vagas de remoção, responda apenas: VAZIO.
+        Importante: Abaixo do cabeçalho de VAGAS, retorne APENAS as linhas separadas por ponto e vírgula. Se não houver vagas de remoção, coloque apenas a palavra VAZIO.
 
         TEXTO PARA ANÁLISE:
         {texto_alvo}
@@ -87,21 +97,39 @@ def extrair_dados_com_ia(caminho_pdf):
             try:
                 res = dados_json['candidates'][0]['content']['parts'][0]['text'].strip()
             except KeyError:
-                return [], "Erro ao interpretar resposta da API", tempo_processamento
+                return [], "", "", "Erro ao interpretar resposta da API", tempo_processamento
             
-            if "VAZIO" in res or ";" not in res:
-                return [], status_ia, tempo_processamento
-                
-            linhas = [l.strip() for l in res.split('\n') if ';' in l]
-            return [linha.split(';') for linha in linhas], status_ia, tempo_processamento
+            lista_vagas = []
+            is_vagas = False
+            
+            # Processa o formato de blocos retornado pela IA
+            for linha in res.split('\n'):
+                linha_limpa = linha.strip()
+                if not linha_limpa:
+                    continue
+                    
+                if linha_limpa.startswith("SESSAO:"):
+                    sessao_info = linha_limpa.replace("SESSAO:", "").strip()
+                elif linha_limpa.startswith("VALIDADE:"):
+                    validade_info = linha_limpa.replace("VALIDADE:", "").strip()
+                elif linha_limpa.startswith("VAGAS:"):
+                    is_vagas = True
+                elif is_vagas:
+                    if linha_limpa == "VAZIO":
+                        break
+                    # Ignora a linha de cabeçalho e garante que é uma linha de dados
+                    if ';' in linha_limpa and "Item;Órgão" not in linha_limpa: 
+                        lista_vagas.append(linha_limpa.split(';'))
+                        
+            return lista_vagas, sessao_info, validade_info, status_ia, tempo_processamento
         else:
             erro_msg = f"Erro {response.status_code}: {response.text}"
             print(erro_msg)
-            return [], f"Erro na API ({response.status_code})", tempo_processamento
+            return [], "", "", f"Erro na API ({response.status_code})", tempo_processamento
         
     except Exception as e:
         print(f"Erro no processamento da IA: {e}")
-        return [], f"Erro critico: {str(e)}", tempo_processamento
+        return [], "", "", f"Erro critico: {str(e)}", tempo_processamento
 
 def formatar_excel(dados, arquivo, data_do):
     df = pd.DataFrame(dados, columns=["Item", "Órgão", "Critério", "Origem da Vaga (Decorrente de)"])
@@ -141,10 +169,9 @@ def formatar_excel(dados, arquivo, data_do):
             
             ws.column_dimensions[col_letter].width = max_length + 3
 
-def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, arquivo_excel=None, arquivo_pdf=None):
+def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, sessao_info="", validade_info="", arquivo_excel=None, arquivo_pdf=None):
     msg = EmailMessage()
     msg['From'] = EMAIL_REMETENTE
-    # Une os destinatários da lista separados por vírgula
     msg['To'] = ", ".join(EMAILS_DESTINO)
     msg['Subject'] = f"Monitoramento DOeMPRJ - {data_do}"
     
@@ -152,7 +179,12 @@ def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, 
     endereco_url = url_pdf if localizado else "Nao localizado"
     
     if tem_dados:
-        resultado_texto = f"Sucesso. {qtd_vagas} vagas de remocao extraidas e informadas no arquivo em anexo."
+        resultado_texto = (
+            f"Sucesso. {qtd_vagas} vagas de remocao extraidas e informadas no arquivo em anexo.\n\n"
+            f"--- INFORMACOES DA PUBLICACAO ---\n"
+            f"Sessao do Conselho: {sessao_info}\n"
+            f"Validade da Remocao: {validade_info}\n"
+        )
     else:
         resultado_texto = "Dados de remocao nao encontrados."
 
@@ -212,7 +244,7 @@ def rodar():
 
             tamanho_pdf_kb = round(os.path.getsize(pdf_local) / 1024, 2)
 
-            dados, status_ia, tempo_processamento = extrair_dados_com_ia(pdf_local)
+            dados, sessao_info, validade_info, status_ia, tempo_processamento = extrair_dados_com_ia(pdf_local)
 
             if dados:
                 tem_dados = True
@@ -222,6 +254,7 @@ def rodar():
                 
                 enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados, 
                              qtd_vagas=qtd_vagas, tempo_ia=tempo_processamento, tamanho_kb=tamanho_pdf_kb, 
+                             sessao_info=sessao_info, validade_info=validade_info,
                              arquivo_excel=excel_local, arquivo_pdf=pdf_local)
             else:
                 enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados, 
