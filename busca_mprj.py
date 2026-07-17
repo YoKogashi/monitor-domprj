@@ -9,11 +9,18 @@ from datetime import datetime, timedelta
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- CONFIGURAÇÕES ---
-# Lista de e-mails que receberão o relatório
-EMAILS_DESTINO = ["renan.barros@mprj.mp.br", "sandro.silva@mprj.mp.br"]
 EMAIL_REMETENTE = "renan.help@gmail.com" 
 SENHA_APP = "saty tgmz rzrz yrai" 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+
+# Listas de e-mails dinâmicas conforme o resultado
+EMAILS_SEM_RESULTADO = ["renan.barros@mprj.mp.br"]
+EMAILS_COM_RESULTADO = [
+    "renan.barros@mprj.mp.br",
+    "sandro.silva@mprj.mp.br",
+    "suelly.rocha@mprj.mp.br",
+    "carla.tilley@mprj.mp.br"
+]
 
 def extrair_dados_com_ia(caminho_pdf):
     tempo_processamento = 0
@@ -169,10 +176,10 @@ def formatar_excel(dados, arquivo, data_do):
             
             ws.column_dimensions[col_letter].width = max_length + 3
 
-def enviar_email(data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, sessao_info="", validade_info="", arquivo_excel=None, arquivo_pdf=None):
+def enviar_email(emails_destino, data_do, url_pdf, localizado, status_dl, status_ia, tem_dados, qtd_vagas=0, tempo_ia=0, tamanho_kb=0, sessao_info="", validade_info="", arquivo_excel=None, arquivo_pdf=None):
     msg = EmailMessage()
     msg['From'] = EMAIL_REMETENTE
-    msg['To'] = ", ".join(EMAILS_DESTINO)
+    msg['To'] = ", ".join(emails_destino)
     msg['Subject'] = f"Monitoramento DOeMPRJ - {data_do}"
     
     status_arquivo = "Localizado" if localizado else "Nao localizado"
@@ -252,22 +259,26 @@ def rodar():
                 excel_local = "Vagas_Encontradas.xlsx"
                 formatar_excel(dados, excel_local, data_exibicao)
                 
-                enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados, 
+                # Se encontrou dados, envia para a lista completa
+                enviar_email(EMAILS_COM_RESULTADO, data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados, 
                              qtd_vagas=qtd_vagas, tempo_ia=tempo_processamento, tamanho_kb=tamanho_pdf_kb, 
                              sessao_info=sessao_info, validade_info=validade_info,
                              arquivo_excel=excel_local, arquivo_pdf=pdf_local)
             else:
-                enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados, 
+                # Se NÃO encontrou dados, envia apenas para você
+                enviar_email(EMAILS_SEM_RESULTADO, data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados, 
                              tempo_ia=tempo_processamento, tamanho_kb=tamanho_pdf_kb, arquivo_pdf=pdf_local)
         
         else:
             status_download = f"Mal sucedido (Erro {response.status_code})"
-            enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados)
+            # Falha de download também vai apenas para você saber do erro
+            enviar_email(EMAILS_SEM_RESULTADO, data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados)
             
     except Exception as e:
         status_download = f"Mal sucedido ({str(e)})"
         print(f"Erro critico: {e}")
-        enviar_email(data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados)
+        # Erro crítico também vai apenas para você
+        enviar_email(EMAILS_SEM_RESULTADO, data_exibicao, url_pdf, localizado, status_download, status_ia, tem_dados)
 
 if __name__ == "__main__":
     rodar()
