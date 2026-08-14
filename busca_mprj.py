@@ -18,7 +18,6 @@ EMAILS_SEM_RESULTADO = ["renan.barros@mprj.mp.br"]
 EMAILS_COM_RESULTADO = [
     "renan.barros@mprj.mp.br",
     "sandro.silva@mprj.mp.br",
-    "suelly.rocha@mprj.mp.br",
     "carla.tilley@mprj.mp.br"
 ]
 
