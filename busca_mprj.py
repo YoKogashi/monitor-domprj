@@ -17,8 +17,7 @@ GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 EMAILS_SEM_RESULTADO = ["renan.barros@mprj.mp.br"]
 EMAILS_COM_RESULTADO = [
     "renan.barros@mprj.mp.br",
-    "sandro.silva@mprj.mp.br",
-    "carla.tilley@mprj.mp.br"
+    "sandro.silva@mprj.mp.br"
 ]
 
 def extrair_dados_com_ia(caminho_pdf):
