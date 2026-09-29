@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 
-import fitz  # PyMuPDF
+import pymupdf as fitz
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 import pandas as pd
 import requests
