@@ -12,14 +12,32 @@ import pandas as pd
 import requests
 
 # --- CONFIGURAÇÕES E SEGURANÇA ---
-EMAIL_REMETENTE = os.getenv("EMAIL_REMETENTE", "renan.help@gmail.com")
-SENHA_APP = os.getenv("EMAIL_SENHA_APP")
+EMAIL_REMETENTE = os.getenv("EMAIL_REMETENTE")
+SENHA_APP = (
+    os.getenv("EMAIL_SENHA_APP", "").replace(" ", "")
+    if os.getenv("EMAIL_SENHA_APP")
+    else None
+)
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+
+# Validação defensiva na inicialização
+faltantes = []
+if not EMAIL_REMETENTE:
+    faltantes.append("EMAIL_REMETENTE")
+if not SENHA_APP:
+    faltantes.append("EMAIL_SENHA_APP")
+if not GEMINI_KEY:
+    faltantes.append("GEMINI_API_KEY")
+
+if faltantes:
+    raise ValueError(
+        f"Erro de configuração: Variáveis obrigatórias ausentes nos Secrets: {', '.join(faltantes)}"
+    )
 
 EMAILS_SEM_RESULTADO = ["renan.barros@mprj.mp.br"]
 EMAILS_COM_RESULTADO = [
     "renan.barros@mprj.mp.br",
-    "sandro.silva@mprj.mp.br",    
+    "sandro.silva@mprj.mp.br",
 ]
 
 # Termo da 2ª busca
@@ -157,15 +175,12 @@ def extrair_dados_com_ia(caminho_pdf):
 # BUSCA 2: TEXTO EXATO (IPSIS LITTERIS)
 # ==========================================
 def buscar_paragrafos_exatos(caminho_pdf, termo_busca):
-    """Varre o documento e retorna os parágrafos/blocos onde o termo ocorre, com número de página."""
     achados = []
-    # Normaliza quebras de linha e múltiplos espaços para busca flexível
     termo_padronizado = re.sub(r"\s+", " ", termo_busca.strip()).lower()
 
     try:
         doc = fitz.open(caminho_pdf)
         for num_pag, pagina in enumerate(doc):
-            # get_text("blocks") retorna blocos no formato: (x0, y0, x1, y1, texto, bloco_num, tipo)
             blocos = pagina.get_text("blocks")
             for b in blocos:
                 texto_bloco = b[4]
@@ -202,7 +217,6 @@ def formatar_excel(dados_vagas, achados_termo, arquivo, data_do):
             start_color="2F5597", end_color="2F5597", fill_type="solid"
         )
 
-        # Aba 1: Vagas de Remoção (se houver)
         if dados_vagas:
             df_vagas = pd.DataFrame(
                 dados_vagas,
@@ -246,7 +260,6 @@ def formatar_excel(dados_vagas, achados_termo, arquivo, data_do):
             ws_rem.column_dimensions["C"].width = 18
             ws_rem.column_dimensions["D"].width = 45
 
-        # Aba 2: Ocorrências de Violência Doméstica
         if achados_termo:
             df_termo = pd.DataFrame(achados_termo)
             df_termo.rename(
@@ -313,10 +326,6 @@ def enviar_email(
     arquivo_excel=None,
     arquivo_pdf=None,
 ):
-    if not SENHA_APP:
-        print("ALERTA: EMAIL_SENHA_APP não configurada. E-mail não enviado.")
-        return
-
     msg = EmailMessage()
     msg["From"] = EMAIL_REMETENTE
     msg["To"] = ", ".join(emails_destino)
@@ -325,7 +334,6 @@ def enviar_email(
     status_arquivo = "Localizado" if localizado else "Não localizado"
     endereco_url = url_pdf if localizado else "Não localizado"
 
-    # Bloco 1: Concurso de Remoção
     if tem_vagas:
         resultado_remocao = (
             f"• Concurso de Remoção: {qtd_vagas} vaga(s) identificada(s).\n"
@@ -337,7 +345,6 @@ def enviar_email(
             "• Concurso de Remoção: Nenhuma vaga identificada nesta edição.\n"
         )
 
-    # Bloco 2: Termo Específico (Violência Doméstica)
     if achados_termo:
         resultado_termo = (
             f"• Menção à Promotoria (II e IV JVD): {len(achados_termo)} ocorrência(s) encontrada(s)!\n\n"
