@@ -6,9 +6,10 @@ import time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 
-import pymupdf as fitz
+from curl_cffi import requests as cffi_requests
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 import pandas as pd
+import pymupdf as fitz  # PyMuPDF atualizado
 import requests
 
 # --- CONFIGURAÇÕES E SEGURANÇA ---
@@ -20,7 +21,6 @@ SENHA_APP = (
 )
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
-# Validação defensiva na inicialização
 faltantes = []
 if not EMAIL_REMETENTE:
     faltantes.append("EMAIL_REMETENTE")
@@ -67,6 +67,36 @@ JSON_SCHEMA = {
     },
     "required": ["sessao", "validade", "vagas"],
 }
+
+
+# ==========================================
+# DOWNLOAD COM CURL_CFFI E RETENTATIVAS
+# ==========================================
+def baixar_pdf_mprj(url_pdf, tentativas=3):
+    headers = {
+        "Accept": "application/pdf,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://www.mprj.mp.br/",
+    }
+
+    ultimo_erro = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            print(f"Tentativa {tentativa}/{tentativas} de download via curl_cffi...")
+            response = cffi_requests.get(
+                url_pdf,
+                headers=headers,
+                impersonate="chrome",
+                timeout=45,
+            )
+            return response
+        except Exception as e:
+            ultimo_erro = e
+            print(f"Falha na tentativa {tentativa}: {e}")
+            if tentativa < tentativas:
+                time.sleep(5 * tentativa)
+
+    raise ultimo_erro
 
 
 # ==========================================
@@ -421,15 +451,7 @@ def rodar():
 
     try:
         print(f"Buscando PDF para {data_exibicao}: {url_pdf}")
-        response = requests.get(
-            url_pdf,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                )
-            },
-            timeout=120,
-        )
+        response = baixar_pdf_mprj(url_pdf, tentativas=3)
 
         if response.status_code == 200:
             localizado = True
