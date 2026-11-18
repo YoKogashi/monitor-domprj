@@ -2,7 +2,7 @@ name: Busca Diaria MPRJ
 
 on:
   schedule:
-    # Horário em UTC; Horário de Brasília = UTC-3
+    # Horário em UTC; 05:19 UTC = 02:19 Horário de Brasília
     - cron: '19 5 * * *' 
   workflow_dispatch: 
 
@@ -20,7 +20,7 @@ jobs:
 
       - name: instalar bibliotecas
         run: |
-          pip install requests pandas openpyxl PyMuPDF
+          pip install requests pandas openpyxl PyMuPDF curl_cffi
 
       - name: rodar busca
         env:
